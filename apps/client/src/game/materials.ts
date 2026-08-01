@@ -78,13 +78,67 @@ function hash2(x: number, y: number): number {
 const cache = new Map<string, THREE.MeshStandardMaterial>();
 
 /** Ground / large surfaces need higher UV repeat */
-const LARGE_REPEAT = new Set(["snow", "grass", "mud", "dirt", "cobble", "flagstone"]);
+const LARGE_REPEAT = new Set([
+  "snow",
+  "grass",
+  "mud",
+  "dirt",
+  "cobble",
+  "flagstone",
+  "water",
+  "lava_ash",
+  "ember_ash",
+  "moss_stone",
+  "gravel",
+  "iron_floor",
+]);
+
+/** Material IDs with procedural fallbacks; PNG override at textures/{id}.png */
+export const MATERIAL_IDS = [
+  // Core (wired by world / content today)
+  "cobble",
+  "dirt",
+  "snow",
+  "mud",
+  "grass",
+  "planks",
+  "flagstone",
+  "stone",
+  "timber",
+  "bark",
+  "dwarf_stone",
+  "cult",
+  "ice",
+  // Extended (roofs, props, richer biomes — safe if missing PNG)
+  "roof_tiles",
+  "roof_tile",
+  "slate_roof",
+  "thatch",
+  "reed",
+  "metal",
+  "leather",
+  "cloth",
+  "canvas_sail",
+  "water",
+  "lava_ash",
+  "ember_ash",
+  "brick_red",
+  "brick",
+  "moss_stone",
+  "gravel",
+  "iron_floor",
+] as const;
+
+export type MaterialId = (typeof MATERIAL_IDS)[number];
+
+/** Respect Vite base (`/Embertrail/` on GitHub Pages) */
+const TEX_BASE = `${import.meta.env.BASE_URL}textures/`;
 
 export function getMaterial(id: string): THREE.MeshStandardMaterial {
   if (cache.has(id)) return cache.get(id)!;
 
   const loader = new THREE.TextureLoader();
-  const url = `/textures/${id}.png`;
+  const url = `${TEX_BASE}${id}.png`;
 
   const mat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
@@ -135,16 +189,35 @@ function roughnessFor(id: string): number {
     case "ice":
     case "snow":
       return 0.35;
+    case "water":
+      return 0.12;
+    case "metal":
+    case "iron_floor":
+      return 0.42;
     case "dwarf_stone":
     case "flagstone":
     case "stone":
     case "cobble":
+    case "brick":
+    case "brick_red":
+    case "moss_stone":
+    case "roof_tiles":
+    case "roof_tile":
+    case "slate_roof":
+    case "gravel":
       return 0.9;
     case "planks":
     case "timber":
     case "bark":
+    case "thatch":
+    case "reed":
+    case "leather":
+    case "cloth":
+    case "canvas_sail":
       return 0.82;
     case "cult":
+    case "lava_ash":
+    case "ember_ash":
       return 0.75;
     default:
       return 0.85;
@@ -153,12 +226,22 @@ function roughnessFor(id: string): number {
 
 function metalnessFor(id: string): number {
   switch (id) {
+    case "metal":
+    case "iron_floor":
+      return 0.72;
     case "ice":
-      return 0.25;
+    case "water":
+      return 0.22;
     case "dwarf_stone":
       return 0.12;
     case "cult":
+    case "lava_ash":
+    case "ember_ash":
       return 0.08;
+    case "roof_tiles":
+    case "roof_tile":
+    case "slate_roof":
+      return 0.06;
     default:
       return 0.04;
   }
@@ -521,6 +604,279 @@ function procedural(id: string): THREE.CanvasTexture {
           ctx.beginPath();
           ctx.moveTo(Math.random() * s, Math.random() * s);
           ctx.lineTo(Math.random() * s, Math.random() * s);
+          ctx.stroke();
+        }
+      });
+
+    case "roof_tiles":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#4a4038", "#2a2420", 2800);
+        const rowH = 14;
+        for (let y = 0; y < s; y += rowH) {
+          const off = (y / rowH) % 2 === 0 ? 0 : 12;
+          for (let x = -12; x < s + 12; x += 24) {
+            const shade = 55 + hash2(x + 3, y + 1) * 35;
+            ctx.fillStyle = `rgb(${shade + 12},${shade - 4},${shade - 14})`;
+            ctx.beginPath();
+            ctx.moveTo(x + off, y + 2);
+            ctx.lineTo(x + off + 11, y + 2);
+            ctx.lineTo(x + off + 11, y + rowH - 2);
+            ctx.lineTo(x + off + 5.5, y + rowH + 2);
+            ctx.lineTo(x + off, y + rowH - 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = "rgba(20,16,12,0.45)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+        blotches(ctx, s, "#6a5848", 10, 4, 14, 0.1);
+        // frost rim flecks
+        ctx.fillStyle = "rgba(200,210,220,0.08)";
+        for (let i = 0; i < 60; i++) {
+          ctx.fillRect(Math.random() * s, Math.random() * s, 2, 1);
+        }
+      });
+
+    case "thatch":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#8a7040", "#5a4828", 3500);
+        blotches(ctx, s, "#a08850", 18, 6, 20, 0.14);
+        blotches(ctx, s, "#3a3018", 12, 4, 14, 0.12);
+        for (let i = 0; i < 900; i++) {
+          const x = Math.random() * s;
+          const y = Math.random() * s;
+          const warm = 90 + Math.random() * 50;
+          ctx.strokeStyle = `rgba(${warm},${warm * 0.75},${warm * 0.35},${0.25 + Math.random() * 0.35})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + (Math.random() - 0.5) * 4, y + 8 + Math.random() * 14);
+          ctx.stroke();
+        }
+        // binding rows
+        ctx.strokeStyle = "rgba(40,30,15,0.35)";
+        ctx.lineWidth = 2;
+        for (let y = 16; y < s; y += 28) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          for (let x = 0; x < s; x += 20) {
+            ctx.lineTo(x, y + (hash2(x, y) - 0.5) * 4);
+          }
+          ctx.stroke();
+        }
+      });
+
+    case "metal":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#6a6a70", "#3a3a40", 4000);
+        blotches(ctx, s, "#8a8a92", 14, 6, 22, 0.12);
+        blotches(ctx, s, "#2a2a30", 12, 4, 16, 0.14);
+        // brushed streaks
+        ctx.strokeStyle = "rgba(180,180,190,0.12)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 80; i++) {
+          const y = Math.random() * s;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(s, y + (Math.random() - 0.5) * 6);
+          ctx.stroke();
+        }
+        // rust blotches
+        blotches(ctx, s, "#6a3a22", 10, 4, 18, 0.16);
+        // rivet dots
+        for (let y = 20; y < s; y += 40) {
+          for (let x = 20; x < s; x += 40) {
+            ctx.fillStyle = "rgba(30,30,34,0.55)";
+            ctx.beginPath();
+            ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "rgba(160,160,170,0.2)";
+            ctx.beginPath();
+            ctx.arc(x - 0.5, y - 0.5, 1, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      });
+
+    case "leather":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#5a3a24", "#3a2414", 5000);
+        blotches(ctx, s, "#6a4830", 22, 6, 24, 0.16);
+        blotches(ctx, s, "#2a180c", 14, 4, 14, 0.12);
+        // grain pores
+        for (let i = 0; i < 400; i++) {
+          ctx.fillStyle = `rgba(${20 + Math.random() * 30},${10 + Math.random() * 15},5,0.2)`;
+          ctx.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 1);
+        }
+        // worn crease
+        ctx.strokeStyle = "rgba(20,12,6,0.25)";
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 12; i++) {
+          ctx.beginPath();
+          let x = Math.random() * s;
+          let y = Math.random() * s;
+          ctx.moveTo(x, y);
+          for (let j = 0; j < 5; j++) {
+            x += 10 + Math.random() * 20;
+            y += (Math.random() - 0.5) * 16;
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      });
+
+    case "cloth":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#6b4040", "#4a2828", 3000);
+        blotches(ctx, s, "#7a5050", 16, 8, 28, 0.12);
+        // weave grid
+        ctx.strokeStyle = "rgba(40,20,20,0.15)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < s; i += 4) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i, s);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(0, i);
+          ctx.lineTo(s, i);
+          ctx.stroke();
+        }
+        // faded dye patches
+        blotches(ctx, s, "#8a6060", 8, 12, 30, 0.1);
+        blotches(ctx, s, "#3a2020", 6, 8, 20, 0.1);
+        // fray nicks
+        for (let i = 0; i < 40; i++) {
+          ctx.strokeStyle = "rgba(200,170,140,0.12)";
+          ctx.beginPath();
+          const x = Math.random() * s;
+          const y = Math.random() * s;
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + 4, y + 1);
+          ctx.stroke();
+        }
+      });
+
+    case "water":
+      return makeCanvasTexture((ctx, s) => {
+        const grad = ctx.createLinearGradient(0, 0, s, s);
+        grad.addColorStop(0, "#2a4a58");
+        grad.addColorStop(0.35, "#3a6070");
+        grad.addColorStop(0.7, "#2e5060");
+        grad.addColorStop(1, "#1a3848");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, s, s);
+        blotches(ctx, s, "#4a7888", 18, 10, 36, 0.14);
+        blotches(ctx, s, "#1a3040", 14, 8, 28, 0.12);
+        // soft ripples
+        ctx.strokeStyle = "rgba(180,210,220,0.12)";
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 30; i++) {
+          const y = Math.random() * s;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          for (let x = 0; x < s; x += 16) {
+            ctx.lineTo(x, y + Math.sin(x * 0.08 + i) * 4);
+          }
+          ctx.stroke();
+        }
+        // cold highlight flecks
+        ctx.fillStyle = "rgba(220,235,240,0.15)";
+        for (let i = 0; i < 50; i++) {
+          ctx.fillRect(Math.random() * s, Math.random() * s, 2, 1);
+        }
+      });
+
+    case "lava_ash":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#2a2220", "#141010", 5500);
+        blotches(ctx, s, "#3a2a24", 22, 6, 24, 0.16);
+        blotches(ctx, s, "#1a1210", 16, 5, 18, 0.14);
+        // ember cracks
+        ctx.strokeStyle = "rgba(180,60,20,0.35)";
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 28; i++) {
+          ctx.beginPath();
+          let x = Math.random() * s;
+          let y = Math.random() * s;
+          ctx.moveTo(x, y);
+          for (let j = 0; j < 5; j++) {
+            x += (Math.random() - 0.5) * 28;
+            y += (Math.random() - 0.5) * 28;
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+        // ash flecks
+        for (let i = 0; i < 200; i++) {
+          const g = 40 + Math.random() * 50;
+          ctx.fillStyle = `rgba(${g},${g - 5},${g - 10},0.35)`;
+          ctx.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 1);
+        }
+        // dull ember dots
+        for (let i = 0; i < 40; i++) {
+          ctx.fillStyle = `rgba(${160 + Math.random() * 60},${40 + Math.random() * 40},10,0.25)`;
+          ctx.beginPath();
+          ctx.arc(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+
+    case "brick_red":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#6a3a32", "#3a2018", 3500);
+        const bh = 20;
+        const bw = 40;
+        for (let row = 0; row < s / bh; row++) {
+          const off = row % 2 === 0 ? 0 : bw / 2;
+          for (let col = -1; col < s / bw + 1; col++) {
+            const x = col * bw + off;
+            const y = row * bh;
+            const r = 90 + hash2(x, y) * 40;
+            const g = 40 + hash2(x + 1, y) * 25;
+            const b = 32 + hash2(x, y + 2) * 18;
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(x + 1, y + 1, bw - 3, bh - 3);
+            ctx.strokeStyle = "rgba(200,180,150,0.18)";
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(x + 1, y + 1, bw - 3, bh - 3);
+          }
+        }
+        blotches(ctx, s, "#2a1814", 10, 4, 14, 0.1);
+        // soot / frost
+        blotches(ctx, s, "#8a8880", 6, 6, 16, 0.08);
+      });
+
+    case "moss_stone":
+      return makeCanvasTexture((ctx, s) => {
+        noiseFill(ctx, s, "#5a564e", "#2e2c28", 4200);
+        blotches(ctx, s, "#6a6860", 14, 8, 24, 0.12);
+        // irregular blocks like stone
+        const bh = 36;
+        const bw = 48;
+        for (let row = 0; row < s / bh; row++) {
+          const off = row % 2 === 0 ? 0 : bw / 2;
+          for (let col = -1; col < s / bw + 1; col++) {
+            const x = col * bw + off;
+            const y = row * bh;
+            ctx.strokeStyle = "rgba(35,40,30,0.45)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, y + 1, bw - 2, bh - 2);
+          }
+        }
+        // moss patches
+        blotches(ctx, s, "#3a5a30", 28, 6, 22, 0.22);
+        blotches(ctx, s, "#2a4828", 16, 4, 14, 0.16);
+        blotches(ctx, s, "#6a8040", 10, 3, 10, 0.1);
+        // damp streaks
+        ctx.strokeStyle = "rgba(40,60,40,0.2)";
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 20; i++) {
+          const x = Math.random() * s;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.quadraticCurveTo(x + 8, s * 0.5, x - 4, s);
           ctx.stroke();
         }
       });

@@ -688,13 +688,21 @@ function showMap(): void {
   );
 }
 
+function itemIconHtml(itemId: string, size = 28): string {
+  const src = `${import.meta.env.BASE_URL}icons/${itemId}.png`;
+  return `<img src="${src}" alt="" width="${size}" height="${size}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:3px;border:1px solid var(--border);background:#1a1510;flex-shrink:0" onerror="this.style.display='none'" />`;
+}
+
 function showInventory(): void {
   if (!character) return;
   showPanel(
     `<h2>${t("ui.inventory")}</h2>
-    <div style="font-size:0.9rem">${character.inventory
-      .map((i) => `• ${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}`)
-      .join("<br>")}</div>
+    <div class="inv-grid" style="display:flex;flex-direction:column;gap:6px;font-size:0.9rem">${character.inventory
+      .map(
+        (i) =>
+          `<div style="display:flex;align-items:center;gap:8px">${itemIconHtml(i.itemId)}<span>${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}</span></div>`
+      )
+      .join("")}</div>
     <h3 style="margin-top:12px">${t("ui.skills")}</h3>
     <div class="skill-list">${Object.entries(character.skills)
       .filter(([, v]) => v > 0)
@@ -768,7 +776,7 @@ async function showShop(): Promise<void> {
   for (const shop of shops) {
     html += `<h3>${t(shop.nameKey) || shop.id}</h3><div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">`;
     for (const stock of shop.stock || []) {
-      html += `<button class="btn" data-buy="${shop.id}" data-item="${stock.itemId}">${t(`item.${stock.itemId}`) || stock.itemId} (${stock.priceCopper ?? "?"}c)</button>`;
+      html += `<button class="btn" data-buy="${shop.id}" data-item="${stock.itemId}" style="display:flex;align-items:center;gap:8px;text-align:left">${itemIconHtml(stock.itemId, 24)}<span>${t(`item.${stock.itemId}`) || stock.itemId} (${stock.priceCopper ?? "?"}c)</span></button>`;
     }
     for (const svc of shop.services || []) {
       html += `<button class="btn" data-buy="${shop.id}" data-item="${svc.id}">${t(svc.nameKey) || svc.id} (${svc.priceCopper}c)</button>`;
@@ -777,7 +785,7 @@ async function showShop(): Promise<void> {
   }
   html += `<h3>${t("ui.sell") || "Sell"}</h3><div style="display:flex;flex-direction:column;gap:4px">`;
   for (const inv of character.inventory.filter((i) => !["pactcinder", "foxbrand_axe", "mine_key", "cult_sigil", "fake_pactcinder"].includes(i.itemId))) {
-    html += `<button class="btn" data-sell="${inv.itemId}">${t(`item.${inv.itemId}`) || inv.itemId} ×${inv.qty}</button>`;
+    html += `<button class="btn" data-sell="${inv.itemId}" style="display:flex;align-items:center;gap:8px;text-align:left">${itemIconHtml(inv.itemId, 24)}<span>${t(`item.${inv.itemId}`) || inv.itemId} ×${inv.qty}</span></button>`;
   }
   html += `</div>`;
   showPanel(html);

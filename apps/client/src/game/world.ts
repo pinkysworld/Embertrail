@@ -173,6 +173,26 @@ export class WorldScene {
     rim.userData.disposeMat = true;
     this.root.add(rim);
 
+    // Harbor / marsh water strip by town identity
+    if (townId === "rimeport" || townId === "mirehold") {
+      const waterMat = getMaterialTiled(townId === "mirehold" ? "reed" : "water", 8, 3);
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(70, 18), waterMat);
+      water.rotation.x = -Math.PI / 2;
+      water.position.set(0, 0.02, townId === "rimeport" ? 28 : -26);
+      water.userData.disposeMat = true;
+      this.root.add(water);
+    }
+    if (townId === "irondeep") {
+      const ash = new THREE.Mesh(
+        new THREE.CircleGeometry(6, 24),
+        getMaterialTiled("iron_floor", 3, 3)
+      );
+      ash.rotation.x = -Math.PI / 2;
+      ash.position.set(0, 0.03, 0);
+      ash.userData.disposeMat = true;
+      this.root.add(ash);
+    }
+
     // Boundary walls
     const wallMat = getMaterial("stone");
     for (const [x, z, w, d] of [
@@ -425,7 +445,7 @@ export class WorldScene {
     // Peaked pyramid roof (4-sided cone aligned to box)
     const roofH = Math.max(1.0, Math.min(b.w, b.d) * 0.42 + 0.4);
     const roofR = Math.hypot(b.w, b.d) * 0.52;
-    const roofMat = getMaterial(b.texture === "bark" ? "bark" : b.texture === "ice" ? "ice" : "planks");
+    const roofMat = getMaterial(roofIdForBuilding(b.texture));
     const roof = new THREE.Mesh(new THREE.ConeGeometry(roofR, roofH, 4), roofMat);
     roof.rotation.y = Math.PI / 4;
     roof.position.set(b.x, h + roofH / 2 - 0.05, b.z);
@@ -591,7 +611,7 @@ export class WorldScene {
   private addBarrel(x: number, z: number, tipped = false): void {
     const mat = getMaterial("planks");
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.72, 10), mat);
-    const bandMat = this.localMat({ color: 0x2a2a2e, roughness: 0.6, metalness: 0.55 });
+    const bandMat = getMaterial("metal");
     const band1 = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.03, 6, 12), bandMat);
     band1.rotation.x = Math.PI / 2;
     band1.position.y = 0.18;
@@ -605,7 +625,6 @@ export class WorldScene {
     } else {
       g.position.set(x, 0.36, z);
     }
-    band1.userData.disposeMat = true;
     this.root.add(g);
   }
 
@@ -639,7 +658,7 @@ export class WorldScene {
     }
     const roof = new THREE.Mesh(
       new THREE.BoxGeometry(2.2, 0.08, 1.4),
-      this.localMat({ color: 0x6b3030, roughness: 0.85 })
+      getMaterialTiled("cloth", 2, 1.5)
     );
     roof.position.set(x, 1.65, z);
     roof.rotation.z = 0.08;
@@ -803,11 +822,39 @@ function dungeonLightTheme(wallTexture: string): {
     case "ice":
       return { bg: 0x060c14, fog: 0x0a1828, torch: 0x66bbee, hemi: 0x223344, amb: 0x152030 };
     case "cult":
+    case "lava_ash":
       return { bg: 0x0c0606, fog: 0x1a0a0a, torch: 0xff3344, hemi: 0x331818, amb: 0x220c0c };
     case "dwarf_stone":
+    case "brick_red":
       return { bg: 0x0a0908, fog: 0x1a1510, torch: 0xffaa55, hemi: 0x2a2218, amb: 0x1a1410 };
+    case "moss_stone":
+      return { bg: 0x080c08, fog: 0x121814, torch: 0xaacc88, hemi: 0x223322, amb: 0x151a14 };
     default:
       return { bg: 0x0a0a0c, fog: 0x1a1510, torch: 0xffcc88, hemi: 0x223344, amb: 0x151820 };
+  }
+}
+
+/** Roof material pick from building body texture (uses extended materials when present). */
+function roofIdForBuilding(texture: string): string {
+  switch (texture) {
+    case "bark":
+    case "timber":
+      return "thatch";
+    case "ice":
+      return "ice";
+    case "cult":
+      return "lava_ash";
+    case "moss_stone":
+      return "reed"; // falls back to thatch procedural if reed PNG missing
+    case "dwarf_stone":
+    case "stone":
+    case "brick":
+    case "brick_red":
+      return "roof_tiles";
+    case "metal":
+      return "metal";
+    default:
+      return "thatch";
   }
 }
 
