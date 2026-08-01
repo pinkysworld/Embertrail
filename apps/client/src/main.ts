@@ -544,6 +544,7 @@ function wireRoomMessages(room: Awaited<ReturnType<Client["joinOrCreate"]>>, kin
     document.exitPointerLock();
     combatScene.mount(innerWidth, innerHeight);
     combatScene.setState(combat!);
+    combatScene.attachOrbit(canvas);
     renderCombat();
     startAmbient("combat");
     playSfx("ui_open");
