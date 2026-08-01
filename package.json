@@ -1,0 +1,23 @@
+{
+  "name": "embertrail",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embertrail / Glutpfad — browser MMO-lite spiritual successor to classic northern CRPGs",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w @embertrail/server\" \"npm run dev -w @embertrail/client\"",
+    "build": "npm run build -w @embertrail/shared && npm run build -w @embertrail/rules && npm run build -w @embertrail/content && npm run build -w @embertrail/server && npm run build -w @embertrail/client",
+    "test": "npm run test -w @embertrail/rules",
+    "scan-ip": "node tools/scan-banned-terms.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

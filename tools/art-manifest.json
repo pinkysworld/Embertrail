@@ -1,0 +1,9 @@
+{
+  "styleAnchor": "1990s German CRPG remaster aesthetic, painterly but readable in-game, muted earth and cold northern light, mud frost timber stone iron, subtle wear and grime, seamless tileable texture where applicable, no anime, no readable text, no logos, no watermarks",
+  "batches": {
+    "A_ground": ["cobble", "dirt", "snow", "mud", "grass", "planks", "flagstone"],
+    "B_walls": ["stone", "timber", "ice", "dwarf_stone", "bark", "cult"],
+    "G_ui": ["parchment_panel"]
+  },
+  "outputs": "apps/client/public/textures/"
+}
