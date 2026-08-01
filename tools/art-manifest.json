@@ -1,30 +1,20 @@
 {
   "styleAnchor": "1990s German CRPG remaster aesthetic, painterly but readable in-game, muted earth and cold northern light, mud frost timber stone iron, subtle wear and grime, seamless tileable texture where applicable, no anime, no readable text, no logos, no watermarks",
   "textures": {
-    "core": ["cobble", "dirt", "snow", "mud", "grass", "planks", "flagstone", "stone", "timber", "bark", "dwarf_stone", "cult", "ice"],
-    "extended": [
-      "thatch", "roof_tile", "roof_tiles", "slate_roof", "metal", "leather", "cloth", "canvas_sail",
-      "moss_stone", "water", "gravel", "brick", "brick_red", "iron_floor", "ember_ash", "lava_ash", "reed"
-    ]
+    "ground": ["cobble", "dirt", "snow", "mud", "grass", "flagstone", "gravel", "sand", "water", "reed"],
+    "architecture": ["stone", "timber", "bark", "dwarf_stone", "cult", "ice", "moss_stone", "planks", "dock_planks", "brick_red", "brick"],
+    "roofs": ["thatch", "roof_tiles", "roof_tile", "slate_roof", "reed", "lava_ash", "canvas_sail"],
+    "props": ["metal", "leather", "cloth", "canvas_sail", "rope", "iron_floor", "ember_ash", "lava_ash", "frost_window", "glass"],
+    "productionCount": 35
   },
-  "icons": {
-    "all": [
-      "longsword", "shortsword", "battle_axe", "warhammer", "staff", "shortbow", "throwing_knives",
-      "wooden_shield", "leather_armor", "cloth_armor", "boots", "arrows",
-      "lockpicks", "lute", "spellbook", "herb_pouch",
-      "rations_pack", "ration", "potion_heal", "potion_focus",
-      "herb_woundwort", "herb_frostleaf", "herb_emberroot", "copper_coins",
-      "pactcinder", "foxbrand_axe", "fake_pactcinder", "mine_key", "cult_sigil"
-    ]
+  "wiring": {
+    "roofs": "town-aware roofIdForBuilding",
+    "dungeons": "mine gravel/ember_ash/lava_ash; cult lava_ash/ember_ash; ice snow",
+    "props": "dock pier, rope rails, brick chimneys, metal lanterns, frost windows"
   },
-  "ui": [
-    "title", "title_bg", "panel_parchment", "button_metal_trim", "quest_marker",
-    "coin_pile", "compass_rose", "journal_cover"
-  ],
   "outputs": {
     "textures": "apps/client/public/textures/",
     "icons": "apps/client/public/icons/",
-    "ui": "apps/client/public/ui/",
-    "plans": "docs/design/"
+    "ui": "apps/client/public/ui/"
   }
 }

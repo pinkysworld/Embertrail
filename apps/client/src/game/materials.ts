@@ -91,6 +91,9 @@ const LARGE_REPEAT = new Set([
   "moss_stone",
   "gravel",
   "iron_floor",
+  "sand",
+  "reed",
+  "dock_planks",
 ]);
 
 /** Material IDs with procedural fallbacks; PNG override at textures/{id}.png */
@@ -127,6 +130,12 @@ export const MATERIAL_IDS = [
   "moss_stone",
   "gravel",
   "iron_floor",
+  // Production prop / shore kit
+  "rope",
+  "sand",
+  "frost_window",
+  "glass",
+  "dock_planks",
 ] as const;
 
 export type MaterialId = (typeof MATERIAL_IDS)[number];
@@ -206,6 +215,9 @@ function roughnessFor(id: string): number {
     case "slate_roof":
     case "gravel":
       return 0.9;
+    case "frost_window":
+    case "glass":
+      return 0.2;
     case "planks":
     case "timber":
     case "bark":
@@ -214,6 +226,9 @@ function roughnessFor(id: string): number {
     case "leather":
     case "cloth":
     case "canvas_sail":
+    case "dock_planks":
+    case "rope":
+    case "sand":
       return 0.82;
     case "cult":
     case "lava_ash":
@@ -232,6 +247,9 @@ function metalnessFor(id: string): number {
     case "ice":
     case "water":
       return 0.22;
+    case "frost_window":
+    case "glass":
+      return 0.35;
     case "dwarf_stone":
       return 0.12;
     case "cult":

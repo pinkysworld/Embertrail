@@ -24,6 +24,7 @@ export class WorldScene {
   private amb: THREE.AmbientLight;
   private timeOfDay = 0.38;
   private mode: SceneMode = "town";
+  private currentTownId: string | null = null;
   private windowMats: THREE.MeshStandardMaterial[] = [];
   private lanternLights: THREE.PointLight[] = [];
   private fillLights: THREE.Light[] = [];
@@ -139,6 +140,7 @@ export class WorldScene {
     this.clear();
     this.mode = "town";
     const town = TOWNS[townId] ?? TOWNS.rimeport;
+    this.currentTownId = town.id;
     this.ensureSky();
     if (this.sky) this.sky.visible = true;
 
@@ -182,6 +184,18 @@ export class WorldScene {
       water.userData.disposeMat = true;
       this.root.add(water);
     }
+    // Shore sand between cobbles and harbor (Rimeport)
+    if (townId === "rimeport") {
+      const sand = new THREE.Mesh(
+        new THREE.PlaneGeometry(70, 6),
+        getMaterialTiled("sand", 10, 2)
+      );
+      sand.rotation.x = -Math.PI / 2;
+      sand.position.set(0, 0.025, 22);
+      sand.userData.disposeMat = true;
+      this.root.add(sand);
+      this.addDockPier(0, 26);
+    }
     if (townId === "irondeep") {
       const ash = new THREE.Mesh(
         new THREE.CircleGeometry(6, 24),
@@ -218,7 +232,7 @@ export class WorldScene {
 
     // Buildings
     for (const b of town.buildings) {
-      this.addBuilding(b);
+      this.addBuilding(b, town.id);
       if (b.interact) {
         this.interactables.push({
           id: b.interact,
@@ -423,15 +437,18 @@ export class WorldScene {
     return new THREE.MeshStandardMaterial(params);
   }
 
-  private addBuilding(b: {
-    id: string;
-    x: number;
-    z: number;
-    w: number;
-    d: number;
-    h: number;
-    texture: string;
-  }): void {
+  private addBuilding(
+    b: {
+      id: string;
+      x: number;
+      z: number;
+      w: number;
+      d: number;
+      h: number;
+      texture: string;
+    },
+    townId?: string
+  ): void {
     // Slight height variance for visual interest (stable per building id)
     const hJitter = 0.85 + (hashStr(b.id) % 30) / 100;
     const h = b.h * hJitter;
@@ -445,7 +462,7 @@ export class WorldScene {
     // Peaked pyramid roof (4-sided cone aligned to box)
     const roofH = Math.max(1.0, Math.min(b.w, b.d) * 0.42 + 0.4);
     const roofR = Math.hypot(b.w, b.d) * 0.52;
-    const roofMat = getMaterial(roofIdForBuilding(b.texture));
+    const roofMat = getMaterial(roofIdForBuilding(b.texture, townId ?? this.currentTownId, b.id));
     const roof = new THREE.Mesh(new THREE.ConeGeometry(roofR, roofH, 4), roofMat);
     roof.rotation.y = Math.PI / 4;
     roof.position.set(b.x, h + roofH / 2 - 0.05, b.z);
@@ -454,7 +471,7 @@ export class WorldScene {
     // Eave slab under roof
     const eave = new THREE.Mesh(
       new THREE.BoxGeometry(b.w + 0.45, 0.18, b.d + 0.45),
-      getMaterial("planks")
+      getMaterial(townId === "rimeport" && b.id.includes("envoy") ? "dock_planks" : "planks")
     );
     eave.position.set(b.x, h + 0.05, b.z);
     this.root.add(eave);
@@ -478,14 +495,28 @@ export class WorldScene {
     frameR.position.x = b.x + doorW / 2 + 0.05;
     this.root.add(frameR);
 
-    // Windows — emissive at night
-    const winMat = this.localMat({
-      color: 0x1a2030,
+    // Windows — frosted glass + night emissive (clone after ensuring base load starts)
+    const frostBase = getMaterial("frost_window");
+    const winMat = new THREE.MeshStandardMaterial({
+      color: 0xc8d4e0,
+      map: frostBase.map ?? null,
       emissive: 0xffa040,
       emissiveIntensity: 0,
-      roughness: 0.35,
-      metalness: 0.15,
+      roughness: 0.28,
+      metalness: 0.2,
+      transparent: true,
+      opacity: 0.9,
     });
+    // When async texture arrives on base, copy to window mats that still lack a real map
+    if (!frostBase.map || (frostBase.map as THREE.Texture).isCanvasTexture) {
+      const loader = new THREE.TextureLoader();
+      loader.load(`${import.meta.env.BASE_URL}textures/frost_window.png`, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        winMat.map = tex;
+        winMat.needsUpdate = true;
+      });
+    }
     this.windowMats.push(winMat);
 
     const winW = Math.min(0.7, b.w * 0.18);
@@ -538,7 +569,7 @@ export class WorldScene {
     if (h >= 3.5 && b.w >= 5) {
       const ch = new THREE.Mesh(
         new THREE.BoxGeometry(0.7, 1.4, 0.7),
-        getMaterial("stone")
+        getMaterial("brick_red")
       );
       ch.position.set(b.x + b.w * 0.28, h + roofH * 0.35, b.z - b.d * 0.15);
       this.root.add(ch);
@@ -546,7 +577,16 @@ export class WorldScene {
   }
 
   private addTownPaths(town: TownDef): void {
-    const pathMatId = town.ground === "cobble" ? "cobble" : town.ground === "mud" ? "mud" : "dirt";
+    const pathMatId =
+      town.id === "irondeep"
+        ? "gravel"
+        : town.id === "oakspire"
+          ? "dirt"
+          : town.ground === "cobble"
+            ? "cobble"
+            : town.ground === "mud"
+              ? "mud"
+              : "dirt";
     const pathMat = getMaterialTiled(pathMatId, 2, 8);
 
     // Cross roads through center
@@ -670,18 +710,70 @@ export class WorldScene {
     );
     table.position.set(x, 0.85, z);
     this.root.add(table);
+    // rope ties + leather goods roll on table
+    const rope = new THREE.Mesh(
+      new THREE.TorusGeometry(0.12, 0.025, 6, 10),
+      getMaterial("rope")
+    );
+    rope.rotation.x = Math.PI / 2;
+    rope.position.set(x - 0.5, 0.95, z);
+    this.root.add(rope);
+    const goods = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 0.55, 8),
+      getMaterial("leather")
+    );
+    goods.rotation.z = Math.PI / 2;
+    goods.position.set(x + 0.35, 0.98, z);
+    this.root.add(goods);
+  }
+
+  /** Harbor pier for Rimeport */
+  private addDockPier(x: number, z: number): void {
+    const deck = new THREE.Mesh(
+      new THREE.BoxGeometry(8, 0.2, 12),
+      getMaterialTiled("dock_planks", 3, 4)
+    );
+    deck.position.set(x, 0.15, z);
+    this.root.add(deck);
+    const posts = getMaterial("dock_planks");
+    for (const [ox, oz] of [
+      [-3.5, -5],
+      [3.5, -5],
+      [-3.5, 5],
+      [3.5, 5],
+      [-3.5, 0],
+      [3.5, 0],
+    ] as const) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.2, 8), posts);
+      p.position.set(x + ox, -0.2, z + oz);
+      this.root.add(p);
+    }
+    // Sail tarp over pier end
+    const sail = new THREE.Mesh(
+      new THREE.BoxGeometry(3.5, 0.06, 2.2),
+      getMaterialTiled("canvas_sail", 2, 1.5)
+    );
+    sail.position.set(x, 2.4, z + 3);
+    sail.rotation.z = 0.05;
+    this.root.add(sail);
+    // Rope rails
+    const ropeMat = getMaterial("rope");
+    for (const side of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 11, 6), ropeMat);
+      rail.rotation.x = Math.PI / 2;
+      rail.position.set(x + side * 3.6, 0.9, z);
+      this.root.add(rail);
+    }
   }
 
   private addLanternPost(x: number, z: number): void {
-    const poleMat = this.localMat({ color: 0x2a2420, roughness: 0.7, metalness: 0.35 });
+    const poleMat = getMaterial("metal");
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 3.0, 6), poleMat);
     pole.position.set(x, 1.5, z);
-    pole.userData.disposeMat = true;
     this.root.add(pole);
 
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.07, 0.07), poleMat);
     arm.position.set(x + 0.25, 2.85, z);
-    arm.userData.disposeMat = true;
     this.root.add(arm);
 
     const lampMat = this.localMat({
@@ -834,8 +926,22 @@ function dungeonLightTheme(wallTexture: string): {
   }
 }
 
-/** Roof material pick from building body texture (uses extended materials when present). */
-function roofIdForBuilding(texture: string): string {
+/** Roof material pick from body texture + town identity. */
+function roofIdForBuilding(texture: string, townId?: string | null, buildingId?: string): string {
+  // Town / building overrides first
+  if (townId === "mirehold" && (texture === "timber" || texture === "stone")) {
+    return texture === "timber" ? "reed" : "moss_stone";
+  }
+  if (townId === "rimeport" && (buildingId?.includes("envoy") || texture === "bark")) {
+    return "canvas_sail";
+  }
+  if (townId === "rimeport" && (texture === "stone" || texture === "dwarf_stone")) {
+    return "slate_roof";
+  }
+  if (townId === "irondeep" && texture === "dwarf_stone") {
+    return "roof_tiles";
+  }
+
   switch (texture) {
     case "bark":
     case "timber":
@@ -845,7 +951,7 @@ function roofIdForBuilding(texture: string): string {
     case "cult":
       return "lava_ash";
     case "moss_stone":
-      return "reed"; // falls back to thatch procedural if reed PNG missing
+      return "reed";
     case "dwarf_stone":
     case "stone":
     case "brick":

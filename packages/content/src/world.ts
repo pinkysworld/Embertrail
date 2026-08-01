@@ -237,7 +237,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
         width: 24,
         depth: 30,
         wallTexture: "dwarf_stone",
-        floorTexture: "flagstone",
+        floorTexture: "gravel",
         encounters: [{ type: "cave_beast", count: 2, x: 4, z: -8 }],
         features: [
           { id: "to_deep", kind: "door", x: 0, z: -14, data: { to: "mine_deep" } },
@@ -251,7 +251,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
         width: 20,
         depth: 24,
         wallTexture: "dwarf_stone",
-        floorTexture: "flagstone",
+        floorTexture: "ember_ash",
         encounters: [{ type: "orc_raider", count: 2, x: -3, z: -4 }],
         features: [
           { id: "greed_pile", kind: "greed", x: 0, z: -8 },
@@ -266,7 +266,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
         width: 16,
         depth: 16,
         wallTexture: "cult",
-        floorTexture: "flagstone",
+        floorTexture: "lava_ash",
         encounters: [{ type: "ash_guardian", count: 1, x: 0, z: -4 }],
         features: [
           { id: "pactcinder_chest", kind: "boss", x: 0, z: -6, data: { loot: "pactcinder" } },
@@ -287,7 +287,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
         width: 22,
         depth: 22,
         wallTexture: "cult",
-        floorTexture: "flagstone",
+        floorTexture: "lava_ash",
         encounters: [
           { type: "cultist", count: 2, x: 3, z: -5 },
           { type: "undead", count: 1, x: -4, z: -6 },
@@ -305,7 +305,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
         width: 18,
         depth: 18,
         wallTexture: "cult",
-        floorTexture: "flagstone",
+        floorTexture: "ember_ash",
         encounters: [
           { type: "cultist", count: 2, x: -3, z: -4 },
           { type: "undead", count: 2, x: 4, z: -5 },
