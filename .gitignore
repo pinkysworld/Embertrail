@@ -7,3 +7,9 @@ data/
 apps/client/dist/
 *.log
 .vite/
+
+# Local-only design / legal / IP notes (not published on GitHub)
+LEGAL.md
+docs/
+tools/banned-ip-terms.json
+tools/scan-banned-terms.mjs
