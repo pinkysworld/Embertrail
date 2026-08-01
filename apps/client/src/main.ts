@@ -69,6 +69,14 @@ app.innerHTML = `
   <div id="create-screen" class="panel center-panel hidden" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:90vh;overflow:auto;z-index:16"></div>
   <div id="center-panel" class="panel hidden"></div>
   <div id="combat-ui" class="panel hidden" style="position:absolute;right:12px;top:80px;width:min(320px,40vw);z-index:12"></div>
+  <div id="mobile-controls" class="hidden" aria-hidden="true">
+    <div class="stick-zone" id="stick-zone">
+      <div class="stick-base"></div>
+      <div class="stick-knob" id="stick-knob"></div>
+    </div>
+    <div class="look-hint" id="look-hint">Drag right side<br/>to look</div>
+    <button type="button" id="btn-interact" class="btn">Use</button>
+  </div>
 `;
 
 const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
@@ -81,6 +89,120 @@ const combatScene = new CombatScene(true);
 const player = new PlayerController(canvas);
 const otherPlayers = new Map<string, THREE.Object3D>();
 
+// ——— Mobile virtual joystick ———
+function setupMobileControls(): void {
+  if (!player.touchMode) return;
+  document.body.classList.add("touch-mode");
+  const mc = document.getElementById("mobile-controls")!;
+  const zone = document.getElementById("stick-zone")!;
+  const knob = document.getElementById("stick-knob")!;
+  const btnInteract = document.getElementById("btn-interact")!;
+  const lookHint = document.getElementById("look-hint")!;
+
+  const maxR = 48;
+  let activeId: number | null = null;
+
+  const setKnob = (dx: number, dy: number) => {
+    const len = Math.hypot(dx, dy);
+    const s = len > maxR ? maxR / len : 1;
+    const kx = dx * s;
+    const ky = dy * s;
+    knob.style.transform = `translate(${kx}px, ${ky}px)`;
+    // stickY: screen up = forward = negative clientY delta → positive stickY
+    player.setStick(kx / maxR, -ky / maxR);
+  };
+
+  const resetKnob = () => {
+    activeId = null;
+    knob.style.transform = "translate(0,0)";
+    player.clearStick();
+  };
+
+  zone.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const t = e.changedTouches[0];
+      activeId = t.identifier;
+      const rect = zone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      setKnob(t.clientX - cx, t.clientY - cy);
+    },
+    { passive: false }
+  );
+  zone.addEventListener(
+    "touchmove",
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier !== activeId) continue;
+        const rect = zone.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        setKnob(t.clientX - cx, t.clientY - cy);
+      }
+    },
+    { passive: false }
+  );
+  const endStick = (e: TouchEvent) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === activeId) resetKnob();
+    }
+  };
+  zone.addEventListener("touchend", endStick);
+  zone.addEventListener("touchcancel", endStick);
+
+  btnInteract.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    playSfx("ui_click");
+    player.onInteract?.();
+  });
+  btnInteract.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      playSfx("ui_click");
+      player.onInteract?.();
+    },
+    { passive: false }
+  );
+
+  // Show/hide with game mode
+  const syncMobileUi = () => {
+    const playing = mode === "explore" || mode === "dungeon";
+    mc.classList.toggle("hidden", !playing);
+    mc.classList.toggle("show-controls", playing);
+    mc.setAttribute("aria-hidden", playing ? "false" : "true");
+    lookHint.style.display = playing ? "block" : "none";
+  };
+  // poll lightly via existing loop by exporting
+  (window as any).__embertrailSyncMobile = syncMobileUi;
+
+  // iOS: prevent pull-to-refresh / bounce while playing
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (mode === "explore" || mode === "dungeon" || mode === "combat") {
+        // allow scrolling inside panels
+        const target = e.target as HTMLElement;
+        if (target.closest(".panel, #combat-ui, #center-panel, #create-screen, #chat-box, input, textarea")) {
+          return;
+        }
+        e.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+}
+
+setupMobileControls();
+
 function resize(): void {
   const w = innerWidth;
   const h = innerHeight;
@@ -90,7 +212,7 @@ function resize(): void {
 }
 addEventListener("resize", resize);
 resize();
-combatScene.attachOrbit(canvas);
+// Orbit only while in combat (see combat start/end)
 
 // Title art background
 const titleScreen = document.getElementById("title-screen")!;
@@ -436,6 +558,7 @@ function wireRoomMessages(room: Awaited<ReturnType<Client["joinOrCreate"]>>, kin
     document.getElementById("combat-ui")!.classList.add("hidden");
     combat = null;
     combatScene.setSelected(null);
+    combatScene.detachOrbit();
     mode = dungeonId ? "dungeon" : "explore";
     player.enabled = true;
     if (msg.result === "victory") {
@@ -463,7 +586,8 @@ async function enterGame(): Promise<void> {
   document.getElementById("hud")!.classList.remove("hidden");
   document.getElementById("chat-box")!.classList.remove("hidden");
   document.getElementById("mode-bar")!.classList.remove("hidden");
-  document.getElementById("crosshair")!.classList.remove("hidden");
+  document.getElementById("crosshair")!.classList.toggle("hidden", player.touchMode);
+  (window as any).__embertrailSyncMobile?.();
 
   const townId = character.position.townId || "rimeport";
   world.loadTown(townId);
@@ -1084,6 +1208,7 @@ async function startCombat(enemyType: string, count: number): Promise<void> {
   combatScene.mount(innerWidth, innerHeight);
   combatScene.setState(combat);
   combatScene.setSelected(null);
+  combatScene.attachOrbit(canvas);
   renderCombat();
   startAmbient("combat");
   playSfx("ui_open");
@@ -1176,6 +1301,7 @@ async function combatAction(action: object): Promise<void> {
       document.getElementById("combat-ui")!.classList.add("hidden");
       combat = null;
       combatScene.setSelected(null);
+      combatScene.detachOrbit();
       mode = dungeonId ? "dungeon" : "explore";
       player.enabled = true;
       if (data.ended === "victory") {
@@ -1422,15 +1548,25 @@ function loop(t: number): void {
     }
     const near = world.nearestInteractable(player.position);
     const prompt = document.getElementById("interact-prompt")!;
+    const btnInteract = document.getElementById("btn-interact");
     if (near) {
       prompt.classList.remove("hidden");
-      prompt.textContent = `[E] ${near.kind === "npc" ? t("ui.talk") : near.kind}`;
-    } else prompt.classList.add("hidden");
+      const label = near.kind === "npc" ? t("ui.talk") : near.kind;
+      prompt.textContent = player.touchMode ? label : `[E] ${label}`;
+      btnInteract?.classList.add("show-interact");
+      if (btnInteract) btnInteract.textContent = near.kind === "npc" ? t("ui.talk") : "Use";
+    } else {
+      prompt.classList.add("hidden");
+      btnInteract?.classList.remove("show-interact");
+    }
     renderer.render(world.scene, world.camera);
   } else {
     // title / create: still show world backdrop
+    document.getElementById("btn-interact")?.classList.remove("show-interact");
     renderer.render(world.scene, world.camera);
   }
+  // keep mobile chrome in sync
+  (window as any).__embertrailSyncMobile?.();
 }
 
 // Day/night cycle (full loop ~2 minutes)

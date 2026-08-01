@@ -335,3 +335,180 @@ body,
   right: 12px;
   z-index: 25;
 }
+
+/* ——— Mobile touch controls ——— */
+#mobile-controls {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 14;
+}
+
+body.touch-mode #mobile-controls.show-controls {
+  display: block;
+}
+
+body.touch-mode #game-canvas {
+  touch-action: none;
+}
+
+body.touch-mode {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+.stick-zone {
+  position: absolute;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: 140px;
+  height: 140px;
+  pointer-events: auto;
+  z-index: 15;
+}
+
+.stick-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(20, 16, 12, 0.45);
+  border: 2px solid rgba(196, 165, 116, 0.45);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.35);
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #c4a574, #5c4a32 70%);
+  border: 2px solid rgba(232, 217, 184, 0.7);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  touch-action: none;
+}
+
+.look-hint {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(36px, env(safe-area-inset-bottom));
+  width: min(42vw, 160px);
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(232, 217, 184, 0.55);
+  pointer-events: none;
+  line-height: 1.3;
+}
+
+#btn-interact {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  pointer-events: auto;
+  z-index: 15;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: linear-gradient(180deg, #7a5c2e, #4a3518);
+  border: 2px solid var(--gold);
+  color: var(--parchment);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+  display: none;
+}
+
+body.touch-mode #btn-interact.show-interact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile layout tweaks for HUD / panels */
+@media (max-width: 700px), (pointer: coarse) {
+  #hud {
+    flex-direction: column;
+    gap: 6px;
+    left: 8px;
+    right: 8px;
+    top: max(8px, env(safe-area-inset-top));
+  }
+
+  #hud .bars {
+    min-width: 0;
+    width: 100%;
+  }
+
+  #hud-right {
+    font-size: 0.75rem !important;
+    max-width: 100%;
+  }
+
+  #chat-box {
+    width: min(280px, 55vw);
+    left: 8px;
+    bottom: max(180px, env(safe-area-inset-bottom) + 160px);
+    font-size: 0.8rem;
+  }
+
+  #chat-log {
+    height: 72px;
+  }
+
+  #mode-bar {
+    bottom: auto;
+    top: max(110px, env(safe-area-inset-top) + 96px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 96vw;
+    gap: 4px;
+  }
+
+  #mode-bar .btn {
+    padding: 6px 8px;
+    font-size: 0.75rem;
+  }
+
+  #combat-ui {
+    left: 8px !important;
+    right: 8px !important;
+    top: auto !important;
+    bottom: max(200px, env(safe-area-inset-bottom) + 180px);
+    width: auto !important;
+    max-height: 38vh;
+    overflow: auto;
+    font-size: 0.85rem;
+  }
+
+  #center-panel,
+  #create-screen {
+    width: min(96vw, 520px) !important;
+    max-height: 78vh !important;
+  }
+
+  .interact-prompt {
+    bottom: 38%;
+    font-size: 0.8rem;
+  }
+
+  .title-actions {
+    flex-direction: column;
+    width: min(280px, 90vw);
+  }
+
+  .title-actions .btn {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  #title-screen h1 {
+    font-size: clamp(1.8rem, 9vw, 2.8rem);
+    text-align: center;
+    padding: 0 12px;
+  }
+}
