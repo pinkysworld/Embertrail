@@ -46,6 +46,10 @@ body,
 
 .panel {
   background: var(--panel);
+  background-image: linear-gradient(rgba(20, 14, 10, 0.72), rgba(20, 14, 10, 0.82)),
+    var(--ui-panel-parchment);
+  background-size: cover;
+  background-position: center;
   border: 2px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(232, 217, 184, 0.08);
@@ -64,6 +68,10 @@ body,
 
 .btn {
   background: linear-gradient(180deg, #5c4a32, #3a2e1f);
+  background-image: linear-gradient(180deg, rgba(92, 74, 50, 0.92), rgba(58, 46, 31, 0.95)),
+    var(--ui-button-trim);
+  background-size: cover, 100% 100%;
+  background-position: center;
   border: 1px solid var(--border);
   color: var(--parchment);
   padding: 8px 14px;
@@ -71,6 +79,7 @@ body,
   cursor: pointer;
   font: inherit;
   font-size: 0.95rem;
+  box-shadow: inset 0 0 0 1px rgba(180, 150, 80, 0.25);
 }
 
 .btn:hover {
@@ -127,10 +136,16 @@ body,
 
 .bar.life > i {
   background: linear-gradient(90deg, #1b4332, #52b788);
+  background-image: var(--ui-hp-fill);
+  background-size: cover;
+  background-position: left center;
 }
 
 .bar.focus > i {
   background: linear-gradient(90deg, #1d3557, #a8dadc);
+  background-image: var(--ui-focus-fill);
+  background-size: cover;
+  background-position: left center;
 }
 
 #chat-box {
@@ -310,12 +325,86 @@ body,
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border: 1px solid rgba(232, 217, 184, 0.5);
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border: none;
+  border-radius: 0;
   pointer-events: none;
+  background: var(--ui-crosshair) center / contain no-repeat;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
+}
+
+.inv-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: rgba(10, 8, 6, 0.45) var(--ui-slot-frame) center / 100% 100% no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(107, 90, 69, 0.5);
+  border-radius: 4px;
+}
+
+.inv-slot img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 3px;
+  background: #1a1510;
+}
+
+.map-compass {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  float: right;
+  margin: 0 0 8px 12px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+.journal-cover {
+  width: 56px;
+  height: 72px;
+  object-fit: cover;
+  float: left;
+  margin: 0 12px 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.gold-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--gold);
+}
+
+.gold-chip img {
+  width: 22px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.quest-pin {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+  margin-right: 4px;
+  object-fit: contain;
+}
+
+.npc-portrait {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  float: left;
+  margin: 0 12px 8px 0;
+  background: #1a1510;
 }
 
 .interact-prompt {

@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import type { CombatState, Combatant } from "@embertrail/shared";
 import { createEnemyMesh, createPartyAvatar } from "./characterMesh";
+import { getMaterial } from "./materials";
 
 const TILE = 1;
 const ACTIVE_COLOR = 0xffd54a;
@@ -59,6 +60,9 @@ export class CombatScene {
     plane: new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }),
   };
 
+  /** Optional textured combat floor (flagstone / dirt checker). */
+  private texturedTiles = false;
+
   // Orbit
   private orbitEnabled = false;
   private orbitEl: HTMLElement | null = null;
@@ -90,6 +94,31 @@ export class CombatScene {
     this.dir.position.set(8, 18, 6);
     this.scene.add(this.hemi, this.dir);
     this.scene.add(new THREE.AmbientLight(0x405060, 0.35));
+
+    // Prefer world textures for tactical tiles
+    try {
+      const a = getMaterial("flagstone").clone();
+      const b = getMaterial("dirt").clone();
+      a.color = new THREE.Color(0xffffff);
+      b.color = new THREE.Color(0xd8d0c0);
+      if (a.map) {
+        a.map = a.map.clone();
+        a.map.wrapS = a.map.wrapT = THREE.RepeatWrapping;
+        a.map.repeat.set(1, 1);
+      }
+      if (b.map) {
+        b.map = b.map.clone();
+        b.map.wrapS = b.map.wrapT = THREE.RepeatWrapping;
+        b.map.repeat.set(1, 1);
+      }
+      this.mats.tileA = a;
+      this.mats.tileB = b;
+      this.mats.blocked = getMaterial("stone").clone();
+      this.mats.rim = getMaterial("planks").clone();
+      this.texturedTiles = true;
+    } catch {
+      /* solid color fallback */
+    }
 
     this.placeCamera();
   }

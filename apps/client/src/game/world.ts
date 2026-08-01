@@ -255,6 +255,28 @@ export class WorldScene {
         radius: 2.2,
         kind: "npc",
       });
+      // Quest pin above key story NPCs / dungeon doors
+      if (
+        npc.kind === "priest" ||
+        npc.kind === "envoy" ||
+        npc.kind === "smith" ||
+        npc.id.includes("leaf") ||
+        npc.id.includes("deep")
+      ) {
+        this.addQuestMarker(npc.x, npc.z, 2.6);
+      }
+    }
+
+    // Quest markers over dungeon entrances / quest boards
+    for (const b of town.buildings) {
+      if (
+        b.interact?.startsWith("dungeon") ||
+        b.id.includes("quest") ||
+        b.id.includes("crypt") ||
+        b.id.includes("cellar")
+      ) {
+        this.addQuestMarker(b.x, b.z + b.d / 2 + 0.3, b.h + 1.2);
+      }
     }
 
     // Lantern posts along main approaches
@@ -725,6 +747,34 @@ export class WorldScene {
     goods.rotation.z = Math.PI / 2;
     goods.position.set(x + 0.35, 0.98, z);
     this.root.add(goods);
+  }
+
+  private addQuestMarker(x: number, z: number, y = 2.5): void {
+    const loader = new THREE.TextureLoader();
+    const mat = new THREE.SpriteMaterial({
+      color: 0xffcc66,
+      transparent: true,
+      depthTest: true,
+      sizeAttenuation: true,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(x, y, z);
+    sprite.scale.set(0.55, 0.7, 1);
+    sprite.userData.disposeMat = true;
+    this.root.add(sprite);
+    loader.load(
+      `${import.meta.env.BASE_URL}ui/quest_marker.png`,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        mat.map = tex;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        /* keep gold diamond fallback color */
+      }
+    );
   }
 
   /** Harbor pier for Rimeport */

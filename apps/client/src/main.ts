@@ -23,6 +23,19 @@ import type { PartyState } from "@embertrail/shared";
 const API = "";
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
 const OFFLINE = isOfflineMode();
+const BASE = import.meta.env.BASE_URL;
+
+/** Wire public UI chrome into CSS vars (respects GitHub Pages base path). */
+(function applyUiChrome(): void {
+  const root = document.documentElement.style;
+  const u = (name: string) => `url(${BASE}ui/${name})`;
+  root.setProperty("--ui-panel-parchment", u("panel_parchment.png"));
+  root.setProperty("--ui-button-trim", u("button_metal_trim.png"));
+  root.setProperty("--ui-hp-fill", u("hp_bar_fill.png"));
+  root.setProperty("--ui-focus-fill", u("focus_bar_fill.png"));
+  root.setProperty("--ui-crosshair", u("crosshair.png"));
+  root.setProperty("--ui-slot-frame", u("slot_frame.png"));
+})();
 
 let token = localStorage.getItem("embertrail_token") ?? "";
 let character: CharacterSheet | null = null;
@@ -630,8 +643,9 @@ function updateHud(): void {
   (document.getElementById("focus-bar") as HTMLElement).style.width = character.focusMax
     ? `${(100 * character.focus) / character.focusMax}%`
     : "0%";
-  (document.getElementById("hud-meta") as HTMLElement).textContent =
-    `${t("ui.life")} ${character.life}/${character.lifeMax} · ${t("ui.focus")} ${character.focus}/${character.focusMax} · ${t("ui.rations")} ${character.rations} · ${t("ui.gold")} ${character.gold}g ${character.silver}s`;
+  (document.getElementById("hud-meta") as HTMLElement).innerHTML =
+    `${t("ui.life")} ${character.life}/${character.lifeMax} · ${t("ui.focus")} ${character.focus}/${character.focusMax} · ${t("ui.rations")} ${character.rations} · ` +
+    `<span class="gold-chip"><img src="${BASE}ui/coin_pile.png" alt="" />${character.gold}g ${character.silver}s</span>`;
   (document.getElementById("hud-right") as HTMLElement).textContent =
     character.position.dungeonId
       ? `${t("mode.explore")} · ${character.position.dungeonId}`
@@ -666,6 +680,7 @@ function showJournal(): void {
   if (!character) return;
   showPanel(
     `<h2>${t("ui.journal")}</h2>` +
+      `<img class="journal-cover" src="${BASE}ui/journal_cover.png" alt="" />` +
       character.journal
         .map(
           (j) =>
@@ -674,22 +689,27 @@ function showJournal(): void {
           <div style="font-size:0.9rem;color:#c4b49a">${t(j.bodyKey)}</div>
         </div>`
         )
-        .join("")
+        .join("") +
+      `<div style="clear:both"></div>`
   );
 }
 
 function showMap(): void {
   if (!character) return;
   const nodes = TRAVEL_GRAPH.filter((n) => character!.knownMapNodes.includes(n.id) || n.kind === "town");
+  const pin = `<img class="quest-pin" src="${BASE}ui/quest_marker.png" alt="" />`;
   showPanel(
     `<h2>${t("ui.map")}</h2>
-    <div style="font-size:0.9rem">${nodes.map((n) => `• ${t(n.nameKey)} (${n.kind})`).join("<br>")}</div>
-    <p style="color:#b8a88a;font-size:0.85rem;margin-top:8px">${t("ui.travel")}: ${character.knownMapNodes.join(", ")}</p>`
+    <img class="map-compass" src="${BASE}ui/compass_rose.png" alt="" />
+    <div style="font-size:0.9rem">${nodes
+      .map((n) => `${n.kind === "dungeon" || n.kind === "town" ? pin : "• "}${t(n.nameKey)} (${n.kind})`)
+      .join("<br>")}</div>
+    <p style="color:#b8a88a;font-size:0.85rem;margin-top:8px;clear:both">${t("ui.travel")}: ${character.knownMapNodes.join(", ")}</p>`
   );
 }
 
 function itemIconHtml(itemId: string, size = 28): string {
-  const src = `${import.meta.env.BASE_URL}icons/${itemId}.png`;
+  const src = `${BASE}icons/${itemId}.png`;
   return `<img src="${src}" alt="" width="${size}" height="${size}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:3px;border:1px solid var(--border);background:#1a1510;flex-shrink:0" onerror="this.style.display='none'" />`;
 }
 
@@ -700,7 +720,7 @@ function showInventory(): void {
     <div class="inv-grid" style="display:flex;flex-direction:column;gap:6px;font-size:0.9rem">${character.inventory
       .map(
         (i) =>
-          `<div style="display:flex;align-items:center;gap:8px">${itemIconHtml(i.itemId)}<span>${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}</span></div>`
+          `<div class="inv-slot">${itemIconHtml(i.itemId, 36)}<span>${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}</span></div>`
       )
       .join("")}</div>
     <h3 style="margin-top:12px">${t("ui.skills")}</h3>
@@ -772,7 +792,8 @@ async function showShop(): Promise<void> {
     notify(t("shop.none") || "No shops here.", "warn");
     return;
   }
-  let html = `<h2>${t("ui.shop") || "Shop"} — ${t(`place.${townId}`)}</h2>`;
+  let html = `<h2>${t("ui.shop") || "Shop"} — ${t(`place.${townId}`)}</h2>
+    <div class="gold-chip" style="margin-bottom:8px"><img src="${BASE}ui/coin_pile.png" alt="" />${character.gold}g ${character.silver}s · ${character.copper ?? 0}c</div>`;
   for (const shop of shops) {
     html += `<h3>${t(shop.nameKey) || shop.id}</h3><div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">`;
     for (const stock of shop.stock || []) {
@@ -853,18 +874,19 @@ function showQuestPanel(): void {
     (wolvesReady && town === "rimeport") ||
     (hasHerbs && town === "oakspire" && character.questFlags.herbs !== "complete") ||
     (hasSigil && town === "rimeport" && character.questFlags.cult_sigil !== "complete");
+  const pin = `<img class="quest-pin" src="${BASE}ui/quest_marker.png" alt="" />`;
   showPanel(
-    `<h2>${t("ui.quests") || "Quests"}</h2>
+    `<h2>${pin}${t("ui.quests") || "Quests"}</h2>
     <div style="font-size:0.9rem;margin-bottom:10px">
-      <p><strong>${t("quest.pactcinder.name")}</strong>: ${character.questFlags.pactcinder ?? 0}
+      <p>${pin}<strong>${t("quest.pactcinder.name")}</strong>: ${character.questFlags.pactcinder ?? 0}
       ${hasPact ? " — " + (t("quest.pactcinder.ready") || "You carry the Pact Cinder.") : ""}</p>
-      <p><strong>${t("quest.foxbrand.name")}</strong>: ${character.questFlags.foxbrand ?? 0}
+      <p>${pin}<strong>${t("quest.foxbrand.name")}</strong>: ${character.questFlags.foxbrand ?? 0}
       ${hasFox ? " — " + (t("quest.foxbrand.ready") || "You hold the Foxbrand Axe.") : ""}</p>
-      <p><strong>${t("quest.wolves.name")}</strong>: ${character.questFlags.wolves ?? 0}
+      <p>${pin}<strong>${t("quest.wolves.name")}</strong>: ${character.questFlags.wolves ?? 0}
       ${wolvesReady ? " — " + t("quest.wolves.ready") : ""}</p>
-      <p><strong>${t("quest.herbs.name")}</strong>: ${character.questFlags.herbs ?? 0}
+      <p>${pin}<strong>${t("quest.herbs.name")}</strong>: ${character.questFlags.herbs ?? 0}
       ${hasHerbs ? " — " + t("quest.herbs.ready") : ""}</p>
-      <p><strong>${t("quest.cult_sigil.name")}</strong>: ${character.questFlags.cult_sigil ?? 0}
+      <p>${pin}<strong>${t("quest.cult_sigil.name")}</strong>: ${character.questFlags.cult_sigil ?? 0}
       ${hasSigil ? " — " + t("quest.cult_sigil.ready") : ""}</p>
     </div>
     ${
@@ -1341,14 +1363,26 @@ async function combatAction(action: object): Promise<void> {
   }
 }
 
+function npcPortraitUrl(npcId: string): string {
+  // Prefer exact id, then fall back to role-style files we ship
+  const candidates = [
+    npcId,
+    npcId.replace(/^npc_/, ""),
+  ];
+  // Content uses npc_leaf_elder etc.; files are portraits/npc_*.png
+  return `${BASE}portraits/${npcId}.png`;
+}
+
 function showDialogue(): void {
   if (!dialogue) return;
   player.enabled = false;
   document.exitPointerLock();
+  const portrait = npcPortraitUrl(dialogue.npcId);
   showPanel(
     `<h2>${t("ui.talk")}</h2>
+    <img class="npc-portrait" src="${portrait}" alt="" onerror="this.style.display='none'" />
     <p>${t(dialogue.textKey)}</p>
-    <div class="topic-list">
+    <div class="topic-list" style="clear:both">
       ${dialogue.topics
         .map((tp) => `<button class="btn" data-topic="${tp}">${t(`topic.${tp}`)}</button>`)
         .join("")}
