@@ -182,6 +182,39 @@ export const en: Record<string, string> = {
   "notify.item_lost": "Item lost: {item}",
   "notify.exp": "+{n} experience",
   "notify.level_up": "You advance to level {n}!",
+  "notify.healed": "Wounds bound and spirit steadied.",
+  "notify.weapon_upgraded": "Your weapon is reforged sharper.",
+  "notify.not_enough_coin": "Not enough coin.",
+  "notify.quest_complete": "Quest complete: {quest}",
+
+  "shop.rimeport.smith": "Anvilmark Smithy",
+  "shop.rimeport.general": "Harbor General Goods",
+  "shop.rimeport.temple": "Temple of the Harvest Mother",
+  "shop.oakspire.bowyer": "Oakspire Bowyer",
+  "shop.oakspire.herbs": "Grove Herb-Lodge",
+  "shop.mirehold.black_market": "Mirehold Black Market",
+  "shop.irondeep.forge": "Deep Forge",
+  "shop.service.heal": "Temple healing",
+  "shop.service.upgrade_weapon": "Weapon upgrade",
+  "shop.buy": "Buy",
+  "shop.sell": "Sell",
+  "ui.shop": "Shop",
+
+  "alchemy.brew_heal": "Brew healing potion",
+  "alchemy.brew_focus": "Brew focus draught",
+  "alchemy.need_skill": "Your alchemy skill is too low.",
+  "alchemy.missing_ingredients": "Missing ingredients.",
+  "alchemy.success": "Brewing succeeded.",
+
+  "quest.pactcinder.ending.alliance":
+    "You deliver the Pact Cinder to the stonekin envoy in Irondeep. Leaf and stone renew their oath against the Hollow Ember.",
+  "quest.pactcinder.ending.sell":
+    "You sell the Pact Cinder in Mirehold's shadowed market. Coin fills your purse; the old alliance frays.",
+  "quest.pactcinder.ending.alliance.title": "Cinder Restored",
+  "quest.pactcinder.ending.sell.title": "Cinder Sold",
+  "quest.foxbrand.ending":
+    "You claim Foxbrand from the Ice Crypt. The axe's moon-iron hums with old trickster luck.",
+  "quest.foxbrand.ending.title": "Foxbrand Reclaimed",
 
   "skill.swords": "Swords",
   "skill.axes": "Axes",
@@ -275,4 +308,18 @@ export const en: Record<string, string> = {
   "mode.travel": "Travel",
   "mode.combat": "Combat",
   "mode.camp": "Camp",
+
+  "ui.quests": "Quests",
+  "ui.sell": "Sell",
+  "shop.none": "No shops in this place.",
+  "quest.pactcinder.ready": "You carry the Pact Cinder.",
+  "quest.foxbrand.ready": "You hold the Foxbrand Axe.",
+  "quest.pactcinder.alliance": "Deliver to the alliance (Irondeep)",
+  "quest.pactcinder.sell": "Sell to the merchant (Mirehold)",
+  "quest.foxbrand.turnin": "Complete Foxbrand quest",
+  "quest.hint": "Speak to envoys and taverns, then clear the dungeons.",
+  "quest.pactcinder.done_alliance": "The stonekin accept the Pact Cinder. Leaf and stone may yet stand together.",
+  "quest.pactcinder.done_sell": "Gold changes hands. The alliance will have to wait.",
+  "quest.foxbrand.done": "The Foxbrand Axe is yours to wield — or sell another day.",
+
 };

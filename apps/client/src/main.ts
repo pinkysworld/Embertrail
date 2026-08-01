@@ -5,8 +5,11 @@ import { ARCHETYPES, SKILLS, NODE_BY_ID, TRAVEL_GRAPH, hitChancePercent } from "
 import { DUNGEONS, TOWNS } from "@embertrail/content";
 import { t, getLocale, setLocale, toggleLocale } from "./i18n";
 import { WorldScene } from "./game/world";
+import { CombatScene } from "./game/combatScene";
 import { PlayerController } from "./game/player";
 import { isOfflineMode, offlineApi } from "./offlineApi";
+import { SHOPS } from "@embertrail/content";
+import { ALCHEMY_RECIPES } from "@embertrail/rules";
 
 const API = "";
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
@@ -62,6 +65,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const world = new WorldScene();
+const combatScene = new CombatScene(true);
 const player = new PlayerController(canvas);
 const otherPlayers = new Map<string, THREE.Mesh>();
 
@@ -70,9 +74,17 @@ function resize(): void {
   const h = innerHeight;
   renderer.setSize(w, h, false);
   world.setSize(w, h);
+  combatScene.mount(w, h);
 }
 addEventListener("resize", resize);
 resize();
+combatScene.attachOrbit(canvas);
+
+// Title art background
+const titleScreen = document.getElementById("title-screen")!;
+titleScreen.style.backgroundImage = `linear-gradient(rgba(10,8,6,0.55), rgba(10,8,6,0.85)), url(${import.meta.env.BASE_URL}ui/title_bg.jpg)`;
+titleScreen.style.backgroundSize = "cover";
+titleScreen.style.backgroundPosition = "center";
 
 function notify(text: string, kind = "info"): void {
   const el = document.createElement("div");
@@ -154,9 +166,13 @@ function renderCreate(): void {
   el.classList.remove("hidden");
   const arch = ARCHETYPES.find((a) => a.id === createState.archetype)!;
   const attrs = createState.attributes;
+  const portraitUrl = `${import.meta.env.BASE_URL}portraits/${createState.archetype}_${createState.gender}.png`;
   el.innerHTML = `
     <h2>${t("ui.create")}</h2>
     <div class="grid-form">
+      <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:8px">
+        <img src="${portraitUrl}" alt="" width="96" height="96" style="border:2px solid var(--border);border-radius:4px;object-fit:cover;background:#1a1510" onerror="this.style.display='none'" />
+        <div style="flex:1">
       <label>${t("create.name")}</label>
       <input id="cr-name" value="${createState.name}" maxlength="24" />
       <label>${t("create.gender")}</label>
@@ -171,6 +187,8 @@ function renderCreate(): void {
             `<option value="${a.id}" ${a.id === createState.archetype ? "selected" : ""}>${t(a.nameKey)}</option>`
         ).join("")}
       </select>
+        </div>
+      </div>
       <p style="font-size:0.85rem;color:#b8a88a">${t(arch.descKey)}</p>
       <h3>${t("create.attrs")}</h3>
       <div class="attr-grid" id="cr-attrs"></div>
@@ -424,14 +442,16 @@ function updateHud(): void {
 
 function renderModeBar(): void {
   const bar = document.getElementById("mode-bar")!;
-  const buttons = [
+  const buttons: Array<[string, string, () => void]> = [
     ["journal", t("ui.journal"), showJournal],
     ["map", t("ui.map"), showMap],
     ["travel", t("ui.travel"), showTravel],
-    ["camp", t("ui.camp"), doCamp],
+    ["camp", t("ui.camp"), () => void doCamp()],
     ["inventory", t("ui.inventory"), showInventory],
-  ] as const;
-  bar.innerHTML = buttons.map(([id, label]) => `<button class="btn" data-act="${id}">${label}</button>`).join("");
+    ["shop", t("ui.shop") || "Shop", () => void showShop()],
+    ["quest", t("ui.quests") || "Quests", showQuestPanel],
+  ];
+  bar.innerHTML = buttons.map(([, label]) => `<button class="btn">${label}</button>`).join("");
   bar.querySelectorAll("button").forEach((b, i) => {
     (b as HTMLButtonElement).onclick = () => buttons[i][2]();
   });
@@ -487,16 +507,191 @@ function showInventory(): void {
 
 async function doCamp(): Promise<void> {
   if (!character) return;
+  const recipes = ALCHEMY_RECIPES.map(
+    (r) =>
+      `<button class="btn" data-recipe="${r.id}">${t(r.nameKey) || r.id}</button>`
+  ).join(" ");
+  showPanel(
+    `<h2>${t("ui.camp")}</h2>
+    <p>${t("ui.rations")}: ${character.rations}</p>
+    <button class="btn primary" id="camp-rest">${t("ui.camp")} / Rest</button>
+    <h3 style="margin-top:12px">${t("skill.alchemy")}</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${recipes}</div>`
+  );
+  document.getElementById("camp-rest")!.onclick = async () => {
+    try {
+      const data = await api("/api/camp", {
+        method: "POST",
+        body: JSON.stringify({ characterId: character!.id }),
+      });
+      character = data.character;
+      updateHud();
+      notify(t("ui.camp") + " — +" + t("ui.life"));
+      document.getElementById("center-panel")!.classList.add("hidden");
+    } catch {
+      notify(t("travel.starving"), "warn");
+    }
+  };
+  document.querySelectorAll("[data-recipe]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      try {
+        const data = await api("/api/alchemy/brew", {
+          method: "POST",
+          body: JSON.stringify({
+            characterId: character!.id,
+            recipeId: (btn as HTMLElement).dataset.recipe,
+          }),
+        });
+        character = data.character;
+        updateHud();
+        notify(t("notify.item_gained", { item: data.gained?.itemId || "potion" }), "quest");
+      } catch (e: any) {
+        notify(String(e.message || e), "warn");
+      }
+    };
+  });
+}
+
+async function showShop(): Promise<void> {
+  if (!character) return;
+  const townId = character.position.townId || "rimeport";
+  let shops = SHOPS[townId] || [];
   try {
-    const data = await api("/api/camp", {
+    const data = await api(`/api/shops/${townId}`);
+    if (data.shops) shops = data.shops;
+  } catch {
+    /* use local SHOPS */
+  }
+  if (!shops.length) {
+    notify(t("shop.none") || "No shops here.", "warn");
+    return;
+  }
+  let html = `<h2>${t("ui.shop") || "Shop"} — ${t(`place.${townId}`)}</h2>`;
+  for (const shop of shops) {
+    html += `<h3>${t(shop.nameKey) || shop.id}</h3><div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">`;
+    for (const stock of shop.stock || []) {
+      html += `<button class="btn" data-buy="${shop.id}" data-item="${stock.itemId}">${t(`item.${stock.itemId}`) || stock.itemId} (${stock.priceCopper ?? "?"}c)</button>`;
+    }
+    for (const svc of shop.services || []) {
+      html += `<button class="btn" data-buy="${shop.id}" data-item="${svc.id}">${t(svc.nameKey) || svc.id} (${svc.priceCopper}c)</button>`;
+    }
+    html += `</div>`;
+  }
+  html += `<h3>${t("ui.sell") || "Sell"}</h3><div style="display:flex;flex-direction:column;gap:4px">`;
+  for (const inv of character.inventory.filter((i) => !["pactcinder", "foxbrand_axe", "mine_key", "cult_sigil", "fake_pactcinder"].includes(i.itemId))) {
+    html += `<button class="btn" data-sell="${inv.itemId}">${t(`item.${inv.itemId}`) || inv.itemId} ×${inv.qty}</button>`;
+  }
+  html += `</div>`;
+  showPanel(html);
+  document.querySelectorAll("[data-buy]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      try {
+        const data = await api("/api/shop/buy", {
+          method: "POST",
+          body: JSON.stringify({
+            characterId: character!.id,
+            townId,
+            shopId: (btn as HTMLElement).dataset.buy,
+            itemId: (btn as HTMLElement).dataset.item,
+            qty: 1,
+          }),
+        });
+        character = data.character;
+        updateHud();
+        notify(t("notify.item_gained", { item: data.itemId || data.service || "ok" }), "quest");
+        void showShop();
+      } catch (e: any) {
+        notify(String(e.message || e), "warn");
+      }
+    };
+  });
+  document.querySelectorAll("[data-sell]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      try {
+        const data = await api("/api/shop/sell", {
+          method: "POST",
+          body: JSON.stringify({
+            characterId: character!.id,
+            itemId: (btn as HTMLElement).dataset.sell,
+            qty: 1,
+          }),
+        });
+        character = data.character;
+        updateHud();
+        notify(t("notify.item_lost", { item: data.lost?.itemId || "?" }));
+        void showShop();
+      } catch (e: any) {
+        notify(String(e.message || e), "warn");
+      }
+    };
+  });
+}
+
+function showQuestPanel(): void {
+  if (!character) return;
+  const hasPact = character.inventory.some((i) => i.itemId === "pactcinder");
+  const hasFox = character.inventory.some((i) => i.itemId === "foxbrand_axe");
+  const town = character.position.townId || "";
+  showPanel(
+    `<h2>${t("ui.quests") || "Quests"}</h2>
+    <div style="font-size:0.9rem;margin-bottom:10px">
+      <p><strong>${t("quest.pactcinder.name")}</strong>: ${character.questFlags.pactcinder ?? 0}
+      ${hasPact ? " — " + (t("quest.pactcinder.ready") || "You carry the Pact Cinder.") : ""}</p>
+      <p><strong>${t("quest.foxbrand.name")}</strong>: ${character.questFlags.foxbrand ?? 0}
+      ${hasFox ? " — " + (t("quest.foxbrand.ready") || "You hold the Foxbrand Axe.") : ""}</p>
+    </div>
+    ${
+      hasPact && town === "irondeep"
+        ? `<button class="btn primary" id="q-alliance">${t("quest.pactcinder.alliance") || "Deliver to alliance (Irondeep)"}</button>`
+        : ""
+    }
+    ${
+      hasPact && town === "mirehold"
+        ? `<button class="btn danger" id="q-sell">${t("quest.pactcinder.sell") || "Sell to merchant (Mirehold)"}</button>`
+        : ""
+    }
+    ${
+      hasFox
+        ? `<button class="btn primary" id="q-fox">${t("quest.foxbrand.turnin") || "Complete Foxbrand quest"}</button>`
+        : ""
+    }
+    ${
+      !hasPact && !hasFox
+        ? `<p style="color:#b8a88a">${t("quest.hint") || "Speak to envoys, taverns, and clear dungeons."}</p>`
+        : ""
+    }`
+  );
+  const alliance = document.getElementById("q-alliance");
+  if (alliance)
+    alliance.onclick = () => void turnInQuest("pactcinder", "alliance");
+  const sell = document.getElementById("q-sell");
+  if (sell) sell.onclick = () => void turnInQuest("pactcinder", "sell");
+  const fox = document.getElementById("q-fox");
+  if (fox) fox.onclick = () => void turnInQuest("foxbrand");
+}
+
+async function turnInQuest(questId: string, choice?: string): Promise<void> {
+  if (!character) return;
+  try {
+    const data = await api("/api/quest/turnin", {
       method: "POST",
-      body: JSON.stringify({ characterId: character.id }),
+      body: JSON.stringify({ characterId: character.id, questId, choice }),
     });
     character = data.character;
     updateHud();
-    notify(t("ui.camp") + " — +" + t("ui.life"));
-  } catch {
-    notify(t("travel.starving"), "warn");
+    notify(t("notify.quest_update"), "quest");
+    if (data.notifications) {
+      for (const n of data.notifications) {
+        try {
+          notify(t(n));
+        } catch {
+          notify(n);
+        }
+      }
+    }
+    document.getElementById("center-panel")!.classList.add("hidden");
+  } catch (e: any) {
+    notify(String(e.message || e), "warn");
   }
 }
 
@@ -658,6 +853,9 @@ async function startCombat(enemyType: string, count: number): Promise<void> {
   mode = "combat";
   player.enabled = false;
   document.exitPointerLock();
+  combatScene.mount(innerWidth, innerHeight);
+  combatScene.setState(combat);
+  combatScene.setSelected(null);
   renderCombat();
   notify(t("combat.start"));
 }
@@ -731,9 +929,11 @@ async function combatAction(action: object): Promise<void> {
     });
     combat = data.state;
     if (data.character) character = data.character;
+    if (combat) combatScene.setState(combat);
     if (data.ended) {
       document.getElementById("combat-ui")!.classList.add("hidden");
       combat = null;
+      combatScene.setSelected(null);
       mode = dungeonId ? "dungeon" : "explore";
       player.enabled = true;
       if (data.ended === "victory") {
@@ -938,7 +1138,9 @@ function loop(t: number): void {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (t - (loop as any).last) / 1000 || 0.016);
   (loop as any).last = t;
-  if (mode === "explore" || mode === "dungeon") {
+  if (mode === "combat" && combat) {
+    combatScene.render(renderer);
+  } else if (mode === "explore" || mode === "dungeon") {
     player.update(dt, (x, z) => Math.abs(x) > 20 || Math.abs(z) > 20);
     player.applyToCamera(world.camera);
     moveAcc += dt;
@@ -957,18 +1159,20 @@ function loop(t: number): void {
       prompt.classList.remove("hidden");
       prompt.textContent = `[E] ${near.kind === "npc" ? t("ui.talk") : near.kind}`;
     } else prompt.classList.add("hidden");
+    renderer.render(world.scene, world.camera);
+  } else {
+    // title / create: still show world backdrop
+    renderer.render(world.scene, world.camera);
   }
-  renderer.render(world.scene, world.camera);
 }
 
-// Daylight tint
+// Day/night cycle (full loop ~2 minutes)
 setInterval(() => {
   if (mode === "explore") {
-    const h = (Date.now() / 60000) % 1;
-    const c = new THREE.Color().setHSL(0.1, 0.15, 0.35 + 0.2 * Math.sin(h * Math.PI * 2));
-    world.scene.background = c;
+    const t = (Date.now() / 120000) % 1;
+    world.setTimeOfDay(t);
   }
-}, 2000);
+}, 1000);
 
 refreshI18nChrome();
 document.getElementById("crosshair")!.classList.add("hidden");

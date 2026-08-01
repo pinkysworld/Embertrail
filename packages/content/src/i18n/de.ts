@@ -182,6 +182,39 @@ export const de: Record<string, string> = {
   "notify.item_lost": "Gegenstand verloren: {item}",
   "notify.exp": "+{n} Erfahrung",
   "notify.level_up": "Ihr steigt auf Stufe {n}!",
+  "notify.healed": "Wunden verbunden und Geist gestärkt.",
+  "notify.weapon_upgraded": "Eure Waffe ist schärfer geschmiedet.",
+  "notify.not_enough_coin": "Nicht genug Münzen.",
+  "notify.quest_complete": "Quest abgeschlossen: {quest}",
+
+  "shop.rimeport.smith": "Ambossmal-Schmiede",
+  "shop.rimeport.general": "Hafen-Kramladen",
+  "shop.rimeport.temple": "Tempel der Erntemutter",
+  "shop.oakspire.bowyer": "Eichenspitze-Bogner",
+  "shop.oakspire.herbs": "Hain-Kräuterhütte",
+  "shop.mirehold.black_market": "Moorfeste-Schwarzmarkt",
+  "shop.irondeep.forge": "Tiefenesse",
+  "shop.service.heal": "Tempelheilung",
+  "shop.service.upgrade_weapon": "Waffenverbesserung",
+  "shop.buy": "Kaufen",
+  "shop.sell": "Verkaufen",
+  "ui.shop": "Laden",
+
+  "alchemy.brew_heal": "Heiltrank brauen",
+  "alchemy.brew_focus": "Fokustrank brauen",
+  "alchemy.need_skill": "Eure Alchimie ist zu schwach.",
+  "alchemy.missing_ingredients": "Zutaten fehlen.",
+  "alchemy.success": "Brauen gelungen.",
+
+  "quest.pactcinder.ending.alliance":
+    "Ihr übergebt die Bundsglut dem Steinvolk-Gesandten in Eisentief. Blatt und Stein erneuern den Schwur gegen die Namenlose Flamme.",
+  "quest.pactcinder.ending.sell":
+    "Ihr verkauft die Bundsglut auf dem Schattenmarkt der Moorfeste. Kronen füllen den Beutel; das alte Bündnis bröckelt.",
+  "quest.pactcinder.ending.alliance.title": "Glut erneuert",
+  "quest.pactcinder.ending.sell.title": "Glut verkauft",
+  "quest.foxbrand.ending":
+    "Ihr bergt die Fuchsmarke aus der Eiskrypta. Das Mondeisen der Axt summt von alter Schelmenkraft.",
+  "quest.foxbrand.ending.title": "Fuchsmarke geborgen",
 
   "skill.swords": "Schwerter",
   "skill.axes": "Äxte",
@@ -275,4 +308,18 @@ export const de: Record<string, string> = {
   "mode.travel": "Reise",
   "mode.combat": "Kampf",
   "mode.camp": "Lager",
+
+  "ui.quests": "Aufträge",
+  "ui.sell": "Verkaufen",
+  "shop.none": "Hier gibt es keine Läden.",
+  "quest.pactcinder.ready": "Du trägst die Bundsglut.",
+  "quest.foxbrand.ready": "Du trägst die Fuchsmarke.",
+  "quest.pactcinder.alliance": "An das Bündnis übergeben (Eisentief)",
+  "quest.pactcinder.sell": "An den Händler verkaufen (Moorfeste)",
+  "quest.foxbrand.turnin": "Fuchsmarke-Auftrag abschließen",
+  "quest.hint": "Sprich mit Gesandten und Wirten, dann erkunde die Verliese.",
+  "quest.pactcinder.done_alliance": "Das Steinvolk nimmt die Bundsglut. Blatt und Stein können wieder stehen.",
+  "quest.pactcinder.done_sell": "Gold wechselt den Besitzer. Das Bündnis muss warten.",
+  "quest.foxbrand.done": "Die Fuchsmarke ist dein — zum Führen oder für später.",
+
 };

@@ -73,8 +73,8 @@ export const ALCHEMY_RECIPES = [
     skillMin: 2,
   },
   {
-    id: "brew_asp",
-    nameKey: "alchemy.brew_asp",
+    id: "brew_focus",
+    nameKey: "alchemy.brew_focus",
     ingredients: [
       { itemId: "herb_emberroot", qty: 2 },
       { itemId: "herb_frostleaf", qty: 1 },
