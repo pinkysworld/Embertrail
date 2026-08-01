@@ -21,7 +21,7 @@ import {
   ITEMS,
   ALCHEMY_RECIPES,
 } from "@embertrail/rules";
-import { DUNGEONS, SHOPS, getShop } from "@embertrail/content";
+import { DUNGEONS, SHOPS, getShop, QUESTS, getQuestStep, questStepIndex } from "@embertrail/content";
 
 /** Currency: 1 gold = 100 copper, 1 silver = 10 copper */
 function wealthCopper(sheet: CharacterSheet): number {
@@ -229,7 +229,12 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     saveCombat(state);
 
     if (result.ended === "victory") {
-      let next = { ...sheet };
+      let next: CharacterSheet = {
+        ...sheet,
+        inventory: cloneInventory(sheet.inventory),
+        questFlags: { ...sheet.questFlags },
+        journal: [...sheet.journal],
+      };
       next.exp += result.exp ?? 0;
       next = applyLevelUp(next);
       for (const loot of result.loot ?? []) {
@@ -241,6 +246,26 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
       if (me) {
         next.life = me.life;
         next.focus = me.focus;
+      }
+      const foughtWolves = state.combatants.some((c) => c.side === "enemy" && c.enemyType === "wolf");
+      if (
+        foughtWolves &&
+        next.questFlags.wolves &&
+        next.questFlags.wolves !== "complete" &&
+        next.questFlags.wolves !== 3 &&
+        Number(next.questFlags.wolves) < 2
+      ) {
+        next.questFlags.wolves = 2;
+        next.questFlags["wolves:clear_pack"] = true;
+        next.questFlags.wolves_step = "clear_pack";
+        next.journal.push({
+          id: `j_wolves_clear_${Date.now()}`,
+          questId: "wolves",
+          titleKey: "quest.wolves.step.clear_pack.title",
+          bodyKey: "quest.wolves.step.clear_pack.body",
+          timestamp: Date.now(),
+          clue: true,
+        });
       }
       saveChar(next);
       saveCombat(null);
@@ -341,6 +366,10 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
           ];
         }
         if (loot === "foxbrand_axe") next.questFlags.foxbrand = 2;
+        if (loot === "cult_sigil") {
+          if (!next.questFlags.cult_sigil) next.questFlags.cult_sigil = 1;
+          next.questFlags.cult_sigil = 2;
+        }
       }
     }
     saveChar(next);
@@ -475,6 +504,85 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     };
   }
 
+  if (path === "/api/quest/progress" && method === "POST") {
+    const sheet = loadChar();
+    if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
+    const qid = String(body.questId ?? "");
+    const sid = String(body.stepId ?? "");
+    const quest = QUESTS[qid];
+    const step = getQuestStep(qid, sid);
+    if (!quest || !step) throw new Error("unknown_step");
+
+    const flag = sheet.questFlags[qid];
+    if (flag === "complete" || flag === "alliance" || flag === "sold" || flag === 3) {
+      throw new Error("already_complete");
+    }
+    if (step.requires) {
+      for (const [k, v] of Object.entries(step.requires)) {
+        const cur = sheet.questFlags[k];
+        if (typeof v === "number" && typeof cur === "number") {
+          if (cur < v) throw new Error("requires_not_met");
+        } else if (cur !== v) {
+          throw new Error("requires_not_met");
+        }
+      }
+    }
+
+    const next: CharacterSheet = {
+      ...sheet,
+      inventory: cloneInventory(sheet.inventory),
+      questFlags: { ...sheet.questFlags },
+      journal: [...sheet.journal],
+    };
+    const notifications = ["notify.quest_update"];
+    const stepIdx = questStepIndex(qid, sid);
+    const cur = next.questFlags[qid];
+    const curNum = typeof cur === "number" ? cur : 0;
+
+    next.questFlags[`${qid}:${sid}`] = true;
+    next.questFlags[`${qid}_step`] = sid;
+    if (!cur || cur === 0) next.questFlags[qid] = 1;
+    else if (typeof cur === "number" && stepIdx > curNum) next.questFlags[qid] = stepIdx;
+
+    if (qid === "wolves" && sid === "clear_pack") next.questFlags.wolves = 2;
+    if (qid === "pactcinder" && sid === "hear_envoy") {
+      if (!next.questFlags.pactcinder) next.questFlags.pactcinder = 1;
+      next.knownMapNodes = [...new Set([...next.knownMapNodes, "mine_ash_entrance", "road_south"])];
+    }
+    if (qid === "foxbrand" && sid === "tavern_rumor" && !next.questFlags.foxbrand) next.questFlags.foxbrand = 1;
+    if (qid === "foxbrand" && sid === "smith_mooniron") next.questFlags.foxbrand_smith = true;
+    if (qid === "herbs" && sid === "herbalist_plea" && !next.questFlags.herbs) next.questFlags.herbs = 1;
+    if (qid === "cult_sigil" && sid === "temple_whisper" && !next.questFlags.cult_sigil) next.questFlags.cult_sigil = 1;
+    if (qid === "cult_sigil" && sid === "recover_sigil") {
+      if (!next.inventory.some((i) => i.itemId === "cult_sigil" && i.qty >= 1)) throw new Error("missing_item");
+      next.questFlags.cult_sigil = 2;
+    }
+    if (qid === "pactcinder" && sid === "defeat_guardian") {
+      if (next.inventory.some((i) => i.itemId === "pactcinder" && i.qty >= 1)) next.questFlags.pactcinder = 2;
+    }
+    if (qid === "foxbrand" && sid === "claim_axe") {
+      if (next.inventory.some((i) => i.itemId === "foxbrand_axe" && i.qty >= 1)) next.questFlags.foxbrand = 2;
+    }
+
+    next.journal.push({
+      id: `j_${qid}_${sid}_${Date.now()}`,
+      questId: qid,
+      titleKey: step.titleKey,
+      bodyKey: step.bodyKey,
+      timestamp: Date.now(),
+      clue: true,
+    });
+
+    saveChar(next);
+    return {
+      character: next,
+      notifications,
+      questId: qid,
+      stepId: sid,
+      stepIndex: stepIdx,
+    };
+  }
+
   if (path === "/api/quest/turnin" && method === "POST") {
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
@@ -489,15 +597,13 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     };
     const notifications: string[] = [];
     const townId = next.position.townId;
+    const lost: ItemStack[] = [];
+
+    const terminal = (f: number | boolean | string | undefined) =>
+      f === "complete" || f === "alliance" || f === "sold" || f === 3;
 
     if (questId === "pactcinder") {
-      if (
-        next.questFlags.pactcinder === "alliance" ||
-        next.questFlags.pactcinder === "sold" ||
-        next.questFlags.pactcinder === 3
-      ) {
-        throw new Error("already_complete");
-      }
+      if (terminal(next.questFlags.pactcinder)) throw new Error("already_complete");
       const hasShard = next.inventory.some((i) => i.itemId === "pactcinder" && i.qty >= 1);
       if (!hasShard) throw new Error("missing_item");
       if (choice === "alliance") {
@@ -505,6 +611,7 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
         const inv = removeItem(next.inventory, "pactcinder", 1);
         if (!inv) throw new Error("missing_item");
         next.inventory = inv;
+        lost.push({ itemId: "pactcinder", qty: 1 });
         next.questFlags.pactcinder = "alliance";
         next.exp += 100;
         next.gold += 5;
@@ -522,6 +629,7 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
         const inv = removeItem(next.inventory, "pactcinder", 1);
         if (!inv) throw new Error("missing_item");
         next.inventory = inv;
+        lost.push({ itemId: "pactcinder", qty: 1 });
         next.questFlags.pactcinder = "sold";
         next.gold += 50;
         next.exp += 40;
@@ -538,9 +646,7 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
         throw new Error("bad_choice");
       }
     } else if (questId === "foxbrand") {
-      if (next.questFlags.foxbrand === "complete" || next.questFlags.foxbrand === 3) {
-        throw new Error("already_complete");
-      }
+      if (terminal(next.questFlags.foxbrand)) throw new Error("already_complete");
       const hasAxe = next.inventory.some((i) => i.itemId === "foxbrand_axe" && i.qty >= 1);
       if (!hasAxe) throw new Error("missing_item");
       next.questFlags.foxbrand = "complete";
@@ -556,6 +662,69 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
         timestamp: Date.now(),
         clue: true,
       });
+    } else if (questId === "wolves") {
+      if (terminal(next.questFlags.wolves)) throw new Error("already_complete");
+      if (Number(next.questFlags.wolves ?? 0) < 2) throw new Error("need_progress");
+      if (townId !== "rimeport") throw new Error("wrong_town");
+      next.questFlags.wolves = "complete";
+      next.gold += 8;
+      next.exp += 30;
+      notifications.push("notify.quest_complete", "notify.exp");
+      next.journal.push({
+        id: `j_wolves_done_${Date.now()}`,
+        questId: "wolves",
+        titleKey: "quest.wolves.ending.title",
+        bodyKey: "quest.wolves.ending",
+        timestamp: Date.now(),
+        clue: true,
+      });
+    } else if (questId === "herbs") {
+      if (terminal(next.questFlags.herbs)) throw new Error("already_complete");
+      if (townId !== "oakspire") throw new Error("wrong_town");
+      const needed = ["herb_woundwort", "herb_frostleaf", "herb_emberroot"] as const;
+      for (const herb of needed) {
+        if (!next.inventory.some((i) => i.itemId === herb && i.qty >= 1)) throw new Error("missing_item");
+      }
+      let inv = next.inventory;
+      for (const herb of needed) {
+        const removed = removeItem(inv, herb, 1);
+        if (!removed) throw new Error("missing_item");
+        inv = removed;
+        lost.push({ itemId: herb, qty: 1 });
+      }
+      next.inventory = inv;
+      next.questFlags.herbs = "complete";
+      next.gold += 12;
+      next.exp += 40;
+      notifications.push("notify.item_lost", "notify.quest_complete", "notify.exp");
+      next.journal.push({
+        id: `j_herbs_done_${Date.now()}`,
+        questId: "herbs",
+        titleKey: "quest.herbs.ending.title",
+        bodyKey: "quest.herbs.ending",
+        timestamp: Date.now(),
+        clue: true,
+      });
+    } else if (questId === "cult_sigil") {
+      if (terminal(next.questFlags.cult_sigil)) throw new Error("already_complete");
+      if (townId !== "rimeport") throw new Error("wrong_town");
+      const inv = removeItem(next.inventory, "cult_sigil", 1);
+      if (!inv) throw new Error("missing_item");
+      next.inventory = inv;
+      lost.push({ itemId: "cult_sigil", qty: 1 });
+      next.questFlags.cult_sigil = "complete";
+      next.life = next.lifeMax;
+      next.focus = next.focusMax;
+      next.exp += 50;
+      notifications.push("notify.item_lost", "notify.healed", "notify.quest_complete", "notify.exp");
+      next.journal.push({
+        id: `j_cult_sigil_done_${Date.now()}`,
+        questId: "cult_sigil",
+        titleKey: "quest.cult_sigil.ending.title",
+        bodyKey: "quest.cult_sigil.ending",
+        timestamp: Date.now(),
+        clue: true,
+      });
     } else {
       throw new Error("unknown_quest");
     }
@@ -567,7 +736,7 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
       notifications,
       questId: String(questId),
       choice: choice ?? null,
-      lost: questId === "pactcinder" ? [{ itemId: "pactcinder", qty: 1 }] : [],
+      lost,
     };
   }
 

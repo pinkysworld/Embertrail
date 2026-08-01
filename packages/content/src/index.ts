@@ -2,6 +2,7 @@ export { en } from "./i18n/en.js";
 export { de } from "./i18n/de.js";
 export * from "./world.js";
 export * from "./shops.js";
+export * from "./quests.js";
 
 import { en } from "./i18n/en.js";
 import { de } from "./i18n/de.js";

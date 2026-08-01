@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { TOWNS, DUNGEONS, type TownDef, type DungeonRoomDef } from "@embertrail/content";
 import { getMaterial, getMaterialTiled } from "./materials";
+import { createEnemyMesh, createNpcMesh } from "./characterMesh";
 
 export interface Interactable {
   id: string;
@@ -335,13 +336,10 @@ export class WorldScene {
     // Encounters
     for (const enc of room.encounters) {
       for (let i = 0; i < enc.count; i++) {
-        const e = new THREE.Mesh(
-          new THREE.CapsuleGeometry(0.4, 0.85, 4, 8),
-          this.localMat({ color: enemyColor(enc.type), roughness: 0.82, metalness: 0.1 })
-        );
-        e.position.set(enc.x + i * 1.25, 1.05, enc.z);
+        const e = createEnemyMesh(enc.type);
+        e.position.set(enc.x + i * 1.25, 0, enc.z);
         e.userData.enemy = enc.type;
-        e.userData.disposeMat = true;
+        // Character meshes already tag owned materials with disposeMat
         this.root.add(e);
       }
       this.interactables.push({
@@ -686,31 +684,9 @@ export class WorldScene {
   }
 
   private addNpc(x: number, z: number, kind: string): void {
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
-      this.localMat({ color: npcColor(kind), roughness: 0.72, metalness: 0.05 })
-    );
-    body.position.set(x, 1.1, z);
-    body.userData.disposeMat = true;
-    this.root.add(body);
-
-    // Simple head
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 10, 8),
-      this.localMat({ color: 0xc4a882, roughness: 0.75 })
-    );
-    head.position.set(x, 1.85, z);
-    head.userData.disposeMat = true;
-    this.root.add(head);
-
-    // Shoulder cloak hint
-    const cloak = new THREE.Mesh(
-      new THREE.BoxGeometry(0.75, 0.35, 0.4),
-      this.localMat({ color: npcCloak(kind), roughness: 0.85 })
-    );
-    cloak.position.set(x, 1.45, z);
-    cloak.userData.disposeMat = true;
-    this.root.add(cloak);
+    const npc = createNpcMesh(kind);
+    npc.position.set(x, 0, z);
+    this.root.add(npc);
   }
 
   private addTorch(x: number, y: number, z: number, color: number): void {
@@ -833,51 +809,6 @@ function dungeonLightTheme(wallTexture: string): {
     default:
       return { bg: 0x0a0a0c, fog: 0x1a1510, torch: 0xffcc88, hemi: 0x223344, amb: 0x151820 };
   }
-}
-
-function npcColor(kind: string): number {
-  switch (kind) {
-    case "priest":
-      return 0xc4b49a;
-    case "envoy":
-      return 0x6b8f71;
-    case "merchant":
-      return 0xb8860b;
-    case "innkeep":
-      return 0x8b5a2b;
-    case "smith":
-      return 0x6a6a70;
-    case "guard":
-      return 0x4a5560;
-    default:
-      return 0x888888;
-  }
-}
-
-function npcCloak(kind: string): number {
-  switch (kind) {
-    case "priest":
-      return 0x5a4a68;
-    case "envoy":
-      return 0x2f4a32;
-    case "merchant":
-      return 0x6a4020;
-    case "innkeep":
-      return 0x4a3020;
-    case "smith":
-      return 0x3a3a40;
-    default:
-      return 0x3a3a3a;
-  }
-}
-
-function enemyColor(type: string): number {
-  if (type.includes("cult")) return 0x5a1a1a;
-  if (type.includes("frost") || type.includes("ice")) return 0x6a8aaa;
-  if (type.includes("undead")) return 0x6a7060;
-  if (type.includes("orc")) return 0x3a5a2a;
-  if (type.includes("ash") || type.includes("guardian")) return 0x4a3030;
-  return 0x6b2e2e;
 }
 
 function hashStr(s: string): number {

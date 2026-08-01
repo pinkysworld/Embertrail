@@ -81,6 +81,7 @@ export const en: Record<string, string> = {
   "place.cult_cellars": "Cult Cellars",
   "place.irondeep_pass": "Irondeep Pass",
   "place.ice_crypt": "Ice Crypt",
+  "place.quest_board": "Quest Board",
 
   "journal.arrival.title": "Arrival in Rimeport",
   "journal.arrival.body":
@@ -126,10 +127,107 @@ export const en: Record<string, string> = {
   "dlg.merchant.mirehold": "Besieged, desperate, and full of buyers. Perfect for business.",
   "dlg.innkeep.rumors": "A thief-priest whispered of Foxbrand—an axe that never misses a fool's heart.",
   "dlg.innkeep.mine": "Old stonekin digs. Collapses. Ash that sticks to the lungs.",
+  "dlg.smith.foxbrand":
+    "Moon-iron rings like ice on the anvil. Cult thieves dragged Foxbrand toward Mirehold's cellars, then north to the Ice Crypt. Follow the cold.",
 
   "quest.pactcinder.name": "Pact Cinder",
   "quest.foxbrand.name": "Foxbrand Axe",
   "quest.wolves.name": "Road of Teeth",
+  "quest.herbs.name": "Grove's Threefold",
+  "quest.cult_sigil.name": "Sigil of Hollow Ember",
+
+  "quest.pactcinder.step.hear_envoy.title": "Words of the Envoy",
+  "quest.pactcinder.step.hear_envoy.body":
+    "Lirael of Oakspire speaks of the Pact Cinder—lost to ash and greed. Recover it, then choose leaf-and-stone or coin.",
+  "quest.pactcinder.step.find_mine.title": "Road to the Mine",
+  "quest.pactcinder.step.find_mine.body":
+    "The Mine of Ash lies south of Rimeport. Follow the Southern Road to the ash-choked digs.",
+  "quest.pactcinder.step.greed_choice.title": "Glittering Temptation",
+  "quest.pactcinder.step.greed_choice.body":
+    "Gems pile deep in the mine. Take only what you need—or seize all and pay in blood.",
+  "quest.pactcinder.step.defeat_guardian.title": "Ash Guardian",
+  "quest.pactcinder.step.defeat_guardian.body":
+    "An ash-bound guardian bars the deepest chamber. Defeat it to claim the Pact Cinder.",
+  "quest.pactcinder.step.decide_fate.title": "Alliance or Coin",
+  "quest.pactcinder.step.decide_fate.body":
+    "Deliver the cinder to the stonekin in Irondeep, or sell it in Mirehold's shadowed market.",
+
+  "quest.foxbrand.step.tavern_rumor.title": "Tavern Whisper",
+  "quest.foxbrand.step.tavern_rumor.body":
+    "Marta's stewhouse buzzes: a moon-iron axe called Foxbrand was stolen by cult hands.",
+  "quest.foxbrand.step.smith_mooniron.title": "Moon-Iron Lore",
+  "quest.foxbrand.step.smith_mooniron.body":
+    "Brokk Anvilmark knows moon-iron's ring. He points you toward cult cellars and a northern crypt.",
+  "quest.foxbrand.step.cult_cellars.title": "Under Mirehold",
+  "quest.foxbrand.step.cult_cellars.body":
+    "Cult cellars under Mirehold hold rites and maps. Clear the chambers for the trail north.",
+  "quest.foxbrand.step.ice_crypt.title": "Frost Halls",
+  "quest.foxbrand.step.ice_crypt.body":
+    "The Ice Crypt near Irondeep holds the Hollow Ember's servants—and the axe's last rest.",
+  "quest.foxbrand.step.claim_axe.title": "Claim Foxbrand",
+  "quest.foxbrand.step.claim_axe.body":
+    "Take Foxbrand from the barrow. Moon-iron hums for a worthy grip—or a bold thief.",
+
+  "quest.wolves.step.board_notice.title": "Board Notice",
+  "quest.wolves.step.board_notice.body":
+    "A scrap on the Rimeport board: wolves choke the Southern Road. Clear the pack; report to the innkeep.",
+  "quest.wolves.step.road_south.title": "Southern Road",
+  "quest.wolves.step.road_south.body":
+    "Travel the Southern Road. Grey shapes will find you before you find them.",
+  "quest.wolves.step.clear_pack.title": "Pack Broken",
+  "quest.wolves.step.clear_pack.body":
+    "The pack lies still. Return to Marta Brewkettle for coin and thanks.",
+  "quest.wolves.step.report_innkeep.title": "Report to the Inn",
+  "quest.wolves.step.report_innkeep.body":
+    "Tell Marta the road is clear. She pays from the free council's purse.",
+
+  "quest.herbs.step.herbalist_plea.title": "Grove's Need",
+  "quest.herbs.step.herbalist_plea.body":
+    "Oakspire's herbalist needs woundwort, frostleaf, and emberroot—one of each—for winter salves.",
+  "quest.herbs.step.gather_woundwort.title": "Woundwort",
+  "quest.herbs.step.gather_woundwort.body":
+    "Gather woundwort from grove edges and market stalls that still deal fair.",
+  "quest.herbs.step.gather_frostleaf.title": "Frostleaf",
+  "quest.herbs.step.gather_frostleaf.body":
+    "Frostleaf thrives in cold air—Rimeport docks and ice-touched places.",
+  "quest.herbs.step.gather_emberroot.title": "Emberroot",
+  "quest.herbs.step.gather_emberroot.body":
+    "Emberroot drinks ash-warm soil. Seek ash roads, cult caches, and careful traders.",
+  "quest.herbs.step.deliver_bundle.title": "Threefold Bundle",
+  "quest.herbs.step.deliver_bundle.body":
+    "Return all three herbs to Oakspire's herb-lodge for coin and grove favor.",
+
+  "quest.cult_sigil.step.temple_whisper.title": "Temple Concern",
+  "quest.cult_sigil.step.temple_whisper.body":
+    "Sister Halda asks for a cult sigil from the cellars—to break its power with a Harvest Mother blessing.",
+  "quest.cult_sigil.step.enter_cellars.title": "Descent",
+  "quest.cult_sigil.step.enter_cellars.body":
+    "Enter the Cult Cellars beneath Mirehold. Torchlight finds ice and unholy marks.",
+  "quest.cult_sigil.step.recover_sigil.title": "Sigil Recovered",
+  "quest.cult_sigil.step.recover_sigil.body":
+    "You hold a cult sigil. Bring it to the temple in Rimeport before the mark stirs.",
+  "quest.cult_sigil.step.blessing.title": "Blessing of the Mother",
+  "quest.cult_sigil.step.blessing.body":
+    "Offer the sigil at the Rimeport temple. The blessing mends wounds and steadies the spirit.",
+
+  "quest.wolves.ready": "The wolf pack is cleared—report to the innkeep.",
+  "quest.wolves.turnin": "Report the cleared road (Rimeport inn)",
+  "quest.wolves.done": "Marta pays well. The Southern Road breathes easier.",
+  "quest.wolves.ending.title": "Road of Teeth Closed",
+  "quest.wolves.ending":
+    "You report the broken pack. Marta counts gold from the free council and pours a free cup.",
+  "quest.herbs.ready": "You carry all three herbs for the grove.",
+  "quest.herbs.turnin": "Deliver the threefold herbs (Oakspire)",
+  "quest.herbs.done": "The herbalist binds the bundle. Salves for winter—and coin for you.",
+  "quest.herbs.ending.title": "Grove's Threefold Complete",
+  "quest.herbs.ending":
+    "Woundwort, frostleaf, and emberroot rest in Oakspire's lodge. The grove owes you a debt of green.",
+  "quest.cult_sigil.ready": "You carry a cult sigil for the temple.",
+  "quest.cult_sigil.turnin": "Offer the sigil for blessing (Rimeport temple)",
+  "quest.cult_sigil.done": "The sigil cracks under holy oil. Wounds close; the path brightens.",
+  "quest.cult_sigil.ending.title": "Sigil Broken",
+  "quest.cult_sigil.ending":
+    "Sister Halda blesses the cult sigil into harmless ash. Life and focus return; experience settles in your bones.",
 
   "event.wolves": "Grey shapes pace the trail—hungry wolves close in!",
   "event.merchant": "A peddler waves from a lean-to. Goods for sale.",
@@ -175,7 +273,9 @@ export const en: Record<string, string> = {
   "dungeon.mine.greed.take_need": "Take only what you need",
   "dungeon.mine.boss": "An ash-bound guardian stirs—stone and cinder given hate.",
   "dungeon.cellars.intro": "Under empty houses, torchlight finds cult sigils and ice.",
+  "dungeon.cellars.rite": "A rite chamber reeks of ash and old blood. The sigil waits on a black altar.",
   "dungeon.crypt.intro": "The Ice Crypt breathes frost. The Hollow Ember's servants wait.",
+  "dungeon.crypt.barrow": "A side barrow opens on moon-iron gleam—Foxbrand's last resting place.",
 
   "notify.quest_update": "Journal updated.",
   "notify.item_gained": "Item gained: {item}",

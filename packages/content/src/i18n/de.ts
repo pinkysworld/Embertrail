@@ -81,6 +81,7 @@ export const de: Record<string, string> = {
   "place.cult_cellars": "Kultkeller",
   "place.irondeep_pass": "Eisentiefpass",
   "place.ice_crypt": "Eiskrypta",
+  "place.quest_board": "Auftragstafel",
 
   "journal.arrival.title": "Ankunft in Reifhafen",
   "journal.arrival.body":
@@ -126,10 +127,107 @@ export const de: Record<string, string> = {
   "dlg.merchant.mirehold": "Belagert, verzweifelt und voller Käufer. Perfekt fürs Geschäft.",
   "dlg.innkeep.rumors": "Ein Diebespriester flüsterte von Fuchsmarke — einer Axt, die nie das Herz eines Narren verfehlt.",
   "dlg.innkeep.mine": "Alte Steinvolk-Stollen. Einstürze. Asche, die in der Lunge klebt.",
+  "dlg.smith.foxbrand":
+    "Mondeisen klingt wie Eis auf dem Amboss. Kult-Diebe schleppten die Fuchsmarke zu den Kellern der Moorfeste, dann nordwärts zur Eiskrypta. Folge der Kälte.",
 
   "quest.pactcinder.name": "Bundsglut",
   "quest.foxbrand.name": "Fuchsmarke",
   "quest.wolves.name": "Straße der Zähne",
+  "quest.herbs.name": "Dreifach des Hains",
+  "quest.cult_sigil.name": "Siegel der Hohlen Glut",
+
+  "quest.pactcinder.step.hear_envoy.title": "Worte der Gesandten",
+  "quest.pactcinder.step.hear_envoy.body":
+    "Lirael von Eichenspitze spricht von der Bundsglut — verloren an Asche und Gier. Birg sie, dann wähle Blatt-und-Stein oder Münze.",
+  "quest.pactcinder.step.find_mine.title": "Weg zur Mine",
+  "quest.pactcinder.step.find_mine.body":
+    "Die Mine der Asche liegt südlich von Reifhafen. Folge der Südstraße zu den ascheverhangenen Stollen.",
+  "quest.pactcinder.step.greed_choice.title": "Glitzernde Versuchung",
+  "quest.pactcinder.step.greed_choice.body":
+    "Edelsteine häufen sich in der Mine. Nimm nur das Nötige — oder alles, und zahle mit Blut.",
+  "quest.pactcinder.step.defeat_guardian.title": "Aschenwächter",
+  "quest.pactcinder.step.defeat_guardian.body":
+    "Ein aschegebundener Wächter sperrt die tiefste Kammer. Besiege ihn, um die Bundsglut zu bergen.",
+  "quest.pactcinder.step.decide_fate.title": "Bündnis oder Münze",
+  "quest.pactcinder.step.decide_fate.body":
+    "Bringe die Glut zum Steinvolk in Eisentief, oder verkaufe sie auf dem Schattenmarkt der Moorfeste.",
+
+  "quest.foxbrand.step.tavern_rumor.title": "Wirtshausflüstern",
+  "quest.foxbrand.step.tavern_rumor.body":
+    "In Martas Stube flüstert man: Eine Mondeisen-Axt namens Fuchsmarke fiel in Kultistenhände.",
+  "quest.foxbrand.step.smith_mooniron.title": "Kunde vom Mondeisen",
+  "quest.foxbrand.step.smith_mooniron.body":
+    "Brokk Ambossmal kennt den Klang von Mondeisen. Er weist dich zu Kultkellern und einer nördlichen Krypta.",
+  "quest.foxbrand.step.cult_cellars.title": "Unter der Moorfeste",
+  "quest.foxbrand.step.cult_cellars.body":
+    "Die Kultkeller unter der Moorfeste bergen Riten und Karten. Räume die Kammern für den Weg nach Norden.",
+  "quest.foxbrand.step.ice_crypt.title": "Frostdhallen",
+  "quest.foxbrand.step.ice_crypt.body":
+    "Die Eiskrypta bei Eisentief birgt Diener der Hohlen Glut — und die letzte Ruhestätte der Axt.",
+  "quest.foxbrand.step.claim_axe.title": "Fuchsmarke bergen",
+  "quest.foxbrand.step.claim_axe.body":
+    "Nimm die Fuchsmarke aus dem Hügelgrab. Mondeisen summt für einen würdigen Griff — oder einen kühnen Dieb.",
+
+  "quest.wolves.step.board_notice.title": "Aushang an der Tafel",
+  "quest.wolves.step.board_notice.body":
+    "Ein Zettel an der Reifhafener Tafel: Wölfe sperren die Südstraße. Räume das Rudel; melde dich beim Wirt.",
+  "quest.wolves.step.road_south.title": "Südstraße",
+  "quest.wolves.step.road_south.body":
+    "Reise die Südstraße. Graue Schatten finden dich, bevor du sie findest.",
+  "quest.wolves.step.clear_pack.title": "Rudel gebrochen",
+  "quest.wolves.step.clear_pack.body":
+    "Das Rudel liegt still. Kehre zu Marta Bräukessel zurück für Münze und Dank.",
+  "quest.wolves.step.report_innkeep.title": "Meldung im Gasthaus",
+  "quest.wolves.step.report_innkeep.body":
+    "Sage Marta, die Straße ist frei. Sie zahlt aus dem Beutel des Freirats.",
+
+  "quest.herbs.step.herbalist_plea.title": "Not des Hains",
+  "quest.herbs.step.herbalist_plea.body":
+    "Die Kräuterkundige von Eichenspitze braucht Wundkraut, Frostblatt und Glutwurzel — je eines — für Wintersalben.",
+  "quest.herbs.step.gather_woundwort.title": "Wundkraut",
+  "quest.herbs.step.gather_woundwort.body":
+    "Sammle Wundkraut an Hainrändern und bei Händlern, die noch ehrlich wiegen.",
+  "quest.herbs.step.gather_frostleaf.title": "Frostblatt",
+  "quest.herbs.step.gather_frostleaf.body":
+    "Frostblatt gedeiht in kalter Luft — Reifhafener Kais und eisberührte Orte.",
+  "quest.herbs.step.gather_emberroot.title": "Glutwurzel",
+  "quest.herbs.step.gather_emberroot.body":
+    "Glutwurzel trinkt aschewarmen Boden. Suche Ascherwege, Kultverstecke und vorsichtige Händler.",
+  "quest.herbs.step.deliver_bundle.title": "Dreifaches Bündel",
+  "quest.herbs.step.deliver_bundle.body":
+    "Bringe alle drei Kräuter zur Kräuterhütte von Eichenspitze — gegen Münze und Hainhuld.",
+
+  "quest.cult_sigil.step.temple_whisper.title": "Sorge des Tempels",
+  "quest.cult_sigil.step.temple_whisper.body":
+    "Schwester Halda bittet um ein Kultsiegel aus den Kellern — um seine Kraft mit dem Segen der Erntemutter zu brechen.",
+  "quest.cult_sigil.step.enter_cellars.title": "Abstieg",
+  "quest.cult_sigil.step.enter_cellars.body":
+    "Betritt die Kultkeller unter der Moorfeste. Fackellicht findet Eis und unheilige Male.",
+  "quest.cult_sigil.step.recover_sigil.title": "Siegel geborgen",
+  "quest.cult_sigil.step.recover_sigil.body":
+    "Du trägst ein Kultsiegel. Bringe es zum Tempel in Reifhafen, ehe das Mal erwacht.",
+  "quest.cult_sigil.step.blessing.title": "Segen der Mutter",
+  "quest.cult_sigil.step.blessing.body":
+    "Opfere das Siegel im Tempel von Reifhafen. Der Segen heilt Wunden und festigt den Geist.",
+
+  "quest.wolves.ready": "Das Wolfsrudel ist geräumt — melde dich beim Wirt.",
+  "quest.wolves.turnin": "Freie Straße melden (Wirt Reifhafen)",
+  "quest.wolves.done": "Marta zahlt gut. Die Südstraße atmet leichter.",
+  "quest.wolves.ending.title": "Straße der Zähne geschlossen",
+  "quest.wolves.ending":
+    "Du meldest das gebrochene Rudel. Marta zählt Kronen aus dem Freirat und schenkt einen Becher ein.",
+  "quest.herbs.ready": "Du trägst alle drei Kräuter für den Hain.",
+  "quest.herbs.turnin": "Dreifache Kräuter abliefern (Eichenspitze)",
+  "quest.herbs.done": "Die Kräuterkundige bindet das Bündel. Salben für den Winter — und Münze für dich.",
+  "quest.herbs.ending.title": "Dreifach des Hains vollendet",
+  "quest.herbs.ending":
+    "Wundkraut, Frostblatt und Glutwurzel ruhen in der Hütte von Eichenspitze. Der Hain schuldet dir Grünes.",
+  "quest.cult_sigil.ready": "Du trägst ein Kultsiegel für den Tempel.",
+  "quest.cult_sigil.turnin": "Siegel zum Segen opfern (Tempel Reifhafen)",
+  "quest.cult_sigil.done": "Das Siegel springt unter heiligem Öl. Wunden schließen; der Pfad hellt sich.",
+  "quest.cult_sigil.ending.title": "Siegel gebrochen",
+  "quest.cult_sigil.ending":
+    "Schwester Halda segnet das Kultsiegel zu harmloser Asche. Leben und Fokus kehren; Erfahrung legt sich in die Knochen.",
 
   "event.wolves": "Graue Schatten umkreisen den Pfad — hungrige Wölfe!",
   "event.merchant": "Ein Hausierer winkt von einer Hütte. Ware zu verkaufen.",
@@ -175,7 +273,9 @@ export const de: Record<string, string> = {
   "dungeon.mine.greed.take_need": "Nur das Nötige",
   "dungeon.mine.boss": "Ein aschegebundener Wächter erwacht — Stein und Glut voller Hass.",
   "dungeon.cellars.intro": "Unter leeren Häusern finden Fackeln Kultzeichen und Eis.",
-  "dungeon.crypt.intro": "Die Eiskrypta atmet Frost. Diener der Namenlosen Flamme warten.",
+  "dungeon.cellars.rite": "Eine Ritenkammer riecht nach Asche und altem Blut. Das Siegel wartet auf einem schwarzen Altar.",
+  "dungeon.crypt.intro": "Die Eiskrypta atmet Frost. Diener der Hohlen Glut warten.",
+  "dungeon.crypt.barrow": "Ein Seitengrab öffnet sich auf Mondeisenglanz — die letzte Ruhestätte der Fuchsmarke.",
 
   "notify.quest_update": "Tagebuch aktualisiert.",
   "notify.item_gained": "Gegenstand erhalten: {item}",

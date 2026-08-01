@@ -161,6 +161,25 @@ export class HubRoom extends Room {
         client.send("notification", { kind: "quest", textKey: "notify.quest_update" });
         client.send("character_update", { character: getLive(charId) });
       }
+      if (msg.topic === "foxbrand" && sheet.questFlags.foxbrand && !sheet.questFlags.foxbrand_smith) {
+        const journal = [
+          ...sheet.journal,
+          {
+            id: "j_foxbrand_smith",
+            questId: "foxbrand",
+            titleKey: "quest.foxbrand.step.smith_mooniron.title",
+            bodyKey: "quest.foxbrand.step.smith_mooniron.body",
+            timestamp: Date.now(),
+            clue: true,
+          },
+        ];
+        patchLive(charId, {
+          questFlags: { ...sheet.questFlags, foxbrand_smith: true, "foxbrand:smith_mooniron": true },
+          journal,
+        });
+        client.send("notification", { kind: "quest", textKey: "notify.quest_update" });
+        client.send("character_update", { character: getLive(charId) });
+      }
     });
 
     this.clock.setInterval(() => {

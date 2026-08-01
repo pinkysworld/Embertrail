@@ -5,13 +5,11 @@
  */
 import * as THREE from "three";
 import type { CombatState, Combatant } from "@embertrail/shared";
+import { createEnemyMesh, createPartyAvatar } from "./characterMesh";
 
 const TILE = 1;
 const ACTIVE_COLOR = 0xffd54a;
 const SELECT_COLOR = 0xe53935;
-const PARTY_COLOR = 0x4a7ab8;
-const PARTY_ACCENT = 0x7eb0e0;
-const ENEMY_BASE = 0xa63d3d;
 const TILE_A = 0x5a6b52;
 const TILE_B = 0x4a5844;
 const BLOCKED_COLOR = 0x2a2e2c;
@@ -42,15 +40,8 @@ export class CombatScene {
   private geos = {
     tile: new THREE.BoxGeometry(TILE * 0.98, 0.12, TILE * 0.98),
     blocked: new THREE.BoxGeometry(TILE * 0.96, 0.55, TILE * 0.96),
-    capsule: new THREE.CapsuleGeometry(0.22, 0.55, 4, 8),
-    sphereS: new THREE.SphereGeometry(0.18, 8, 8),
-    sphereTiny: new THREE.SphereGeometry(0.1, 6, 6),
-    shoulder: new THREE.BoxGeometry(0.55, 0.14, 0.22),
     barBg: new THREE.BoxGeometry(0.7, 0.06, 0.06),
     barFg: new THREE.BoxGeometry(0.68, 0.04, 0.05),
-    cone: new THREE.ConeGeometry(0.32, 0.9, 6),
-    cylLeg: new THREE.CylinderGeometry(0.05, 0.06, 0.45, 5),
-    boxTorso: new THREE.BoxGeometry(0.28, 0.45, 0.16),
     ringActive: new THREE.TorusGeometry(0.42, 0.08, 8, 28),
     ringSelect: new THREE.TorusGeometry(0.48, 0.06, 8, 28),
   };
@@ -60,9 +51,6 @@ export class CombatScene {
     tileB: mat(TILE_B, 0.92),
     blocked: mat(BLOCKED_COLOR, 0.95, 0.15),
     rim: mat(0x1e2420, 0.9),
-    partyBody: mat(PARTY_COLOR, 0.65, 0.1),
-    partyHead: mat(PARTY_ACCENT, 0.55),
-    enemyFallback: mat(ENEMY_BASE, 0.7),
     barBg: new THREE.MeshBasicMaterial({ color: 0x111111 }),
     barParty: new THREE.MeshBasicMaterial({ color: 0x4caf50 }),
     barEnemy: new THREE.MeshBasicMaterial({ color: 0xc62828 }),
@@ -409,13 +397,14 @@ export class CombatScene {
     g.userData.combatantId = c.id;
 
     if (c.side === "party") {
-      g.add(this.makePartyFigure());
+      const { archetype, gender } = parsePortraitId(c.portraitId);
+      g.add(createPartyAvatar(archetype, gender));
     } else {
-      g.add(this.makeEnemyFigure(c.enemyType ?? "wolf"));
+      g.add(createEnemyMesh(c.enemyType ?? "wolf"));
     }
 
     const barBg = new THREE.Mesh(this.geos.barBg, this.mats.barBg);
-    barBg.position.set(0, 1.55, 0);
+    barBg.position.set(0, 2.05, 0);
     barBg.name = "lifebar-bg";
     g.add(barBg);
 
@@ -423,7 +412,7 @@ export class CombatScene {
       this.geos.barFg,
       c.side === "party" ? this.mats.barParty : this.mats.barEnemy
     );
-    barFg.position.set(0, 1.55, 0.01);
+    barFg.position.set(0, 2.05, 0.01);
     barFg.name = "lifebar";
     g.add(barFg);
 
@@ -437,178 +426,6 @@ export class CombatScene {
     const ratio = c.lifeMax > 0 ? THREE.MathUtils.clamp(c.life / c.lifeMax, 0, 1) : 0;
     bar.scale.x = Math.max(0.02, ratio);
     bar.position.x = -0.34 * (1 - ratio);
-  }
-
-  private makePartyFigure(): THREE.Group {
-    const g = new THREE.Group();
-    // Per-unit material clones so dead fade does not affect allies
-    const bodyMat = this.mats.partyBody.clone();
-    const headMat = this.mats.partyHead.clone();
-    bodyMat.userData.owned = true;
-    headMat.userData.owned = true;
-    const body = new THREE.Mesh(this.geos.capsule, bodyMat);
-    body.position.y = 0.55;
-    body.userData.ownedMat = true;
-    const head = new THREE.Mesh(this.geos.sphereS, headMat);
-    head.position.y = 1.15;
-    head.userData.ownedMat = true;
-    const shoulder = new THREE.Mesh(this.geos.shoulder, bodyMat);
-    shoulder.position.y = 0.85;
-    g.add(body, head, shoulder);
-    return g;
-  }
-
-  private makeEnemyFigure(enemyType: string): THREE.Group {
-    const g = new THREE.Group();
-    const type = enemyType.toLowerCase();
-
-    if (type === "wolf") {
-      g.add(this.quadruped(0x6b4a3a, 0.85, 0.35));
-    } else if (type === "orc_raider") {
-      g.add(this.bulkyHumanoid(0x5a7a3a, 1.15, 0.32));
-    } else if (type === "cultist") {
-      g.add(this.hoodedFigure(0x3a2a4a, 1.2));
-    } else if (type === "cave_beast") {
-      g.add(this.quadruped(0x4a3a2a, 1.05, 0.48));
-    } else if (type === "undead") {
-      g.add(this.skeletalFigure(0x9aa08a));
-    } else if (type === "frost_wight") {
-      g.add(this.hoodedFigure(0x7ab0c8, 1.35, 0xb0e0ff));
-    } else if (type === "ash_guardian") {
-      g.add(this.guardianBlock(0x4a4038, 1.5));
-    } else {
-      const em = this.mats.enemyFallback.clone();
-      em.userData.owned = true;
-      const body = new THREE.Mesh(this.geos.capsule, em);
-      body.position.y = 0.5;
-      body.userData.ownedMat = true;
-      g.add(body);
-    }
-    return g;
-  }
-
-  private quadruped(color: number, length: number, height: number): THREE.Group {
-    const g = new THREE.Group();
-    const m = ownedMat(color, 0.75);
-    const bodyGeo = new THREE.CapsuleGeometry(height * 0.55, length * 0.55, 4, 8);
-    const body = new THREE.Mesh(bodyGeo, m);
-    body.rotation.z = Math.PI / 2;
-    body.position.set(0, height * 0.7, 0);
-    body.userData.ownedGeo = true;
-    body.userData.ownedMat = true;
-
-    const headGeo = new THREE.SphereGeometry(height * 0.4, 6, 6);
-    const head = new THREE.Mesh(headGeo, m);
-    head.position.set(0, height * 0.85, length * 0.35);
-    head.userData.ownedGeo = true;
-
-    const legGeo = new THREE.CylinderGeometry(0.05, 0.06, height * 0.7, 5);
-    for (const [lx, lz] of [
-      [-0.18, 0.2],
-      [0.18, 0.2],
-      [-0.18, -0.22],
-      [0.18, -0.22],
-    ] as const) {
-      const leg = new THREE.Mesh(legGeo, m);
-      leg.position.set(lx, height * 0.35, lz * length * 0.6);
-      leg.userData.ownedGeo = true;
-      g.add(leg);
-    }
-    g.add(body, head);
-    return g;
-  }
-
-  private bulkyHumanoid(color: number, h: number, r: number): THREE.Group {
-    const g = new THREE.Group();
-    const m = ownedMat(color, 0.7);
-    const bodyGeo = new THREE.CapsuleGeometry(r, h * 0.45, 4, 8);
-    const body = new THREE.Mesh(bodyGeo, m);
-    body.position.y = h * 0.45;
-    body.userData.ownedGeo = true;
-    body.userData.ownedMat = true;
-
-    const headGeo = new THREE.SphereGeometry(r * 0.7, 7, 7);
-    const head = new THREE.Mesh(headGeo, m);
-    head.position.y = h * 0.95;
-    head.userData.ownedGeo = true;
-
-    const armsGeo = new THREE.BoxGeometry(r * 2.6, r * 0.55, r * 0.7);
-    const arms = new THREE.Mesh(armsGeo, m);
-    arms.position.y = h * 0.65;
-    arms.userData.ownedGeo = true;
-
-    g.add(body, head, arms);
-    return g;
-  }
-
-  private hoodedFigure(color: number, h: number, glow?: number): THREE.Group {
-    const g = new THREE.Group();
-    const m = ownedMat(color, 0.8);
-    const bodyGeo = new THREE.ConeGeometry(0.32, h * 0.85, 6);
-    const body = new THREE.Mesh(bodyGeo, m);
-    body.position.y = h * 0.42;
-    body.userData.ownedGeo = true;
-    body.userData.ownedMat = true;
-
-    const headMat = new THREE.MeshStandardMaterial({
-      color: glow ?? 0x2a1a1a,
-      emissive: glow ? new THREE.Color(glow).multiplyScalar(0.25) : new THREE.Color(0x000000),
-      roughness: 0.5,
-    });
-    const head = new THREE.Mesh(this.geos.sphereS, headMat);
-    head.position.y = h * 0.78;
-    head.userData.ownedMat = true;
-    head.scale.setScalar(0.9);
-
-    g.add(body, head);
-    return g;
-  }
-
-  private skeletalFigure(color: number): THREE.Group {
-    const g = new THREE.Group();
-    const m = ownedMat(color, 0.55, 0.15);
-    const torso = new THREE.Mesh(this.geos.boxTorso, m);
-    torso.position.y = 0.65;
-    torso.userData.ownedMat = true;
-
-    const head = new THREE.Mesh(this.geos.sphereS, m);
-    head.position.y = 1.05;
-    head.scale.setScalar(0.78);
-
-    const legL = new THREE.Mesh(this.geos.cylLeg, m);
-    legL.position.set(-0.08, 0.25, 0);
-    const legR = new THREE.Mesh(this.geos.cylLeg, m);
-    legR.position.set(0.08, 0.25, 0);
-
-    g.add(torso, head, legL, legR);
-    return g;
-  }
-
-  private guardianBlock(color: number, h: number): THREE.Group {
-    const g = new THREE.Group();
-    const m = ownedMat(color, 0.85, 0.2);
-    const bodyGeo = new THREE.BoxGeometry(0.7, h * 0.7, 0.45);
-    const body = new THREE.Mesh(bodyGeo, m);
-    body.position.y = h * 0.4;
-    body.userData.ownedGeo = true;
-    body.userData.ownedMat = true;
-
-    const headGeo = new THREE.BoxGeometry(0.4, 0.35, 0.35);
-    const head = new THREE.Mesh(headGeo, m);
-    head.position.y = h * 0.9;
-    head.userData.ownedGeo = true;
-
-    const glowMat = new THREE.MeshStandardMaterial({
-      color: 0xff6622,
-      emissive: 0xff4400,
-      emissiveIntensity: 0.6,
-    });
-    const glow = new THREE.Mesh(this.geos.sphereTiny, glowMat);
-    glow.position.set(0, h * 0.9, 0.2);
-    glow.userData.ownedMat = true;
-
-    g.add(body, head, glow);
-    return g;
   }
 
   private refreshMarkers(): void {
@@ -650,10 +467,15 @@ function mat(color: number, roughness = 0.85, metalness = 0.05): THREE.MeshStand
   return new THREE.MeshStandardMaterial({ color, roughness, metalness });
 }
 
-function ownedMat(color: number, roughness = 0.85, metalness = 0.05): THREE.MeshStandardMaterial {
-  const m = mat(color, roughness, metalness);
-  m.userData.owned = true;
-  return m;
+/** portraitId is typically "archetype_m" / "archetype_f". */
+function parsePortraitId(portraitId?: string): { archetype: string; gender?: "m" | "f" } {
+  if (!portraitId) return { archetype: "player_default" };
+  const parts = portraitId.toLowerCase().split("_");
+  const last = parts[parts.length - 1];
+  if (last === "m" || last === "f") {
+    return { archetype: parts.slice(0, -1).join("_") || "player_default", gender: last };
+  }
+  return { archetype: portraitId.toLowerCase() };
 }
 
 function ringMat(color: number): THREE.MeshStandardMaterial {
@@ -682,15 +504,21 @@ function sameBlocked(
 
 /** Dispose geometries/materials tagged as owned; leave shared pool alone. */
 function disposeOwned(obj: THREE.Object3D): void {
+  const freedGeo = new Set<THREE.BufferGeometry>();
+  const freedMat = new Set<THREE.Material>();
   obj.traverse((c) => {
     const mesh = c as THREE.Mesh;
     if (!mesh.isMesh) return;
-    if (mesh.userData.ownedGeo && mesh.geometry) {
+    if (mesh.userData.ownedGeo && mesh.geometry && !freedGeo.has(mesh.geometry)) {
+      freedGeo.add(mesh.geometry);
       mesh.geometry.dispose();
     }
     const material = mesh.material;
     const freeMat = (m: THREE.Material) => {
-      if (mesh.userData.ownedMat || m.userData?.owned) m.dispose();
+      if ((mesh.userData.ownedMat || m.userData?.owned) && !freedMat.has(m)) {
+        freedMat.add(m);
+        m.dispose();
+      }
     };
     if (Array.isArray(material)) material.forEach(freeMat);
     else if (material) freeMat(material);

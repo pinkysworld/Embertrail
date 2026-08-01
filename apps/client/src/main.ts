@@ -10,6 +10,15 @@ import { PlayerController } from "./game/player";
 import { isOfflineMode, offlineApi } from "./offlineApi";
 import { SHOPS } from "@embertrail/content";
 import { ALCHEMY_RECIPES } from "@embertrail/rules";
+import {
+  unlockAudio,
+  playSfx,
+  startAmbient,
+  setMuted,
+  isMuted,
+} from "./audio";
+import { createPartyAvatar } from "./game/characterMesh";
+import type { PartyState } from "@embertrail/shared";
 
 const API = "";
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
@@ -24,6 +33,9 @@ let travelDay = 1;
 let dungeonId: string | null = null;
 let roomId: string | null = null;
 let roomClient: Awaited<ReturnType<Client["joinOrCreate"]>> | null = null;
+let dungeonRoom: Awaited<ReturnType<Client["joinOrCreate"]>> | null = null;
+let colyseusClient: Client | null = null;
+let party: PartyState | null = null;
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
@@ -67,7 +79,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 const world = new WorldScene();
 const combatScene = new CombatScene(true);
 const player = new PlayerController(canvas);
-const otherPlayers = new Map<string, THREE.Mesh>();
+const otherPlayers = new Map<string, THREE.Object3D>();
 
 function resize(): void {
   const w = innerWidth;
@@ -91,7 +103,11 @@ function notify(text: string, kind = "info"): void {
   el.className = "notify";
   el.textContent = text;
   if (kind === "warn") el.style.borderColor = "#8b2e2e";
-  if (kind === "quest") el.style.borderColor = "#b8860b";
+  if (kind === "quest") {
+    el.style.borderColor = "#b8860b";
+    playSfx("quest");
+  } else if (kind === "warn") playSfx("miss");
+  else playSfx("notify");
   document.getElementById("notify-stack")!.appendChild(el);
   setTimeout(() => el.remove(), 4500);
 }
@@ -332,8 +348,116 @@ async function ensureGuestAndQuickStart(): Promise<void> {
   }
 }
 
+function wireRoomMessages(room: Awaited<ReturnType<Client["joinOrCreate"]>>, kind: "hub" | "dungeon"): void {
+  room.onMessage("chat", (msg: any) => {
+    const log = document.getElementById("chat-log")!;
+    const line = document.createElement("div");
+    line.textContent = `[${msg.message.channel}] ${msg.message.from}: ${msg.message.text}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  });
+  room.onMessage("player_joined", (msg: any) => {
+    const p = msg.player || msg;
+    if (p.id === character!.id) return;
+    addOther(p);
+  });
+  room.onMessage("player_left", (msg: any) => {
+    const m = otherPlayers.get(msg.id);
+    if (m) {
+      world.scene.remove(m);
+      otherPlayers.delete(msg.id);
+    }
+  });
+  room.onMessage("player_moved", (msg: any) => {
+    let m = otherPlayers.get(msg.id);
+    if (!m) {
+      addOther({ id: msg.id, name: "?", archetype: "steelguard", x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw });
+      m = otherPlayers.get(msg.id);
+    }
+    if (m) {
+      m.position.set(msg.x, 0, msg.z);
+      m.rotation.y = msg.yaw;
+    }
+  });
+  room.onMessage("hub_state", (msg: any) => {
+    for (const p of msg.players || []) {
+      if (p.id !== character!.id) addOther(p);
+    }
+  });
+  room.onMessage("dungeon_state", (msg: any) => {
+    if (msg.roomId && msg.dungeonId) {
+      dungeonId = msg.dungeonId;
+      roomId = msg.roomId;
+      world.loadDungeonRoom(msg.dungeonId, msg.roomId);
+      for (const p of msg.members || []) {
+        if (p.id !== character!.id) addOther(p);
+      }
+    }
+  });
+  room.onMessage("dialogue", (msg: any) => {
+    dialogue = msg;
+    showDialogue();
+  });
+  room.onMessage("notification", (msg: any) => {
+    notify(t(msg.textKey, msg.args), msg.kind);
+  });
+  room.onMessage("character_update", (msg: any) => {
+    if (msg.character) {
+      character = { ...character!, ...msg.character };
+      updateHud();
+    }
+  });
+  room.onMessage("welcome", (msg: any) => {
+    if (msg.character) character = msg.character;
+    updateHud();
+  });
+  room.onMessage("party_update", (msg: any) => {
+    party = msg.party;
+    notify(party ? `Party: ${party.memberIds.length}` : "Left party");
+  });
+  room.onMessage("combat_start", (msg: any) => {
+    combat = msg.state;
+    mode = "combat";
+    player.enabled = false;
+    document.exitPointerLock();
+    combatScene.mount(innerWidth, innerHeight);
+    combatScene.setState(combat!);
+    renderCombat();
+    startAmbient("combat");
+    playSfx("ui_open");
+    notify(t("combat.start"));
+  });
+  room.onMessage("combat_update", (msg: any) => {
+    combat = msg.state;
+    if (combat) combatScene.setState(combat);
+    renderCombat();
+  });
+  room.onMessage("combat_end", (msg: any) => {
+    document.getElementById("combat-ui")!.classList.add("hidden");
+    combat = null;
+    combatScene.setSelected(null);
+    mode = dungeonId ? "dungeon" : "explore";
+    player.enabled = true;
+    if (msg.result === "victory") {
+      playSfx("victory");
+      notify(t("combat.victory"), "quest");
+      if (msg.exp) notify(t("notify.exp", { n: msg.exp }));
+    } else if (msg.result === "defeat") {
+      playSfx("defeat");
+      notify(t("combat.defeat"), "warn");
+    } else notify(t("combat.fled"));
+    startAmbient(dungeonId ? "dungeon" : "town");
+    updateHud();
+  });
+  room.onMessage("combat_end_shared", () => {
+    /* individual combat_end carries loot */
+  });
+  void kind;
+}
+
 async function enterGame(): Promise<void> {
   if (!character) return;
+  unlockAudio();
   mode = "explore";
   document.getElementById("title-screen")!.classList.add("hidden");
   document.getElementById("hud")!.classList.remove("hidden");
@@ -348,61 +472,12 @@ async function enterGame(): Promise<void> {
   player.enabled = true;
   updateHud();
   renderModeBar();
+  startAmbient("town");
 
   try {
-    const client = new Client(WS_URL);
-    roomClient = await client.joinOrCreate("hub", { townId, character });
-    roomClient.onMessage("chat", (msg: any) => {
-      const log = document.getElementById("chat-log")!;
-      const line = document.createElement("div");
-      line.textContent = `[${msg.message.channel}] ${msg.message.from}: ${msg.message.text}`;
-      log.appendChild(line);
-      log.scrollTop = log.scrollHeight;
-    });
-    roomClient.onMessage("player_joined", (msg: any) => {
-      if (msg.player.id === character!.id) return;
-      addOther(msg.player);
-    });
-    roomClient.onMessage("player_left", (msg: any) => {
-      const m = otherPlayers.get(msg.id);
-      if (m) {
-        world.scene.remove(m);
-        otherPlayers.delete(msg.id);
-      }
-    });
-    roomClient.onMessage("player_moved", (msg: any) => {
-      let m = otherPlayers.get(msg.id);
-      if (!m) {
-        addOther({ id: msg.id, name: "?", archetype: "steelguard", x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw });
-        m = otherPlayers.get(msg.id);
-      }
-      if (m) {
-        m.position.set(msg.x, 1.1, msg.z);
-        m.rotation.y = msg.yaw;
-      }
-    });
-    roomClient.onMessage("hub_state", (msg: any) => {
-      for (const p of msg.players) {
-        if (p.id !== character!.id) addOther(p);
-      }
-    });
-    roomClient.onMessage("dialogue", (msg: any) => {
-      dialogue = msg;
-      showDialogue();
-    });
-    roomClient.onMessage("notification", (msg: any) => {
-      notify(t(msg.textKey, msg.args), msg.kind);
-    });
-    roomClient.onMessage("character_update", (msg: any) => {
-      if (msg.character) {
-        character = { ...character!, ...msg.character };
-        updateHud();
-      }
-    });
-    roomClient.onMessage("welcome", (msg: any) => {
-      character = msg.character;
-      updateHud();
-    });
+    colyseusClient = new Client(WS_URL);
+    roomClient = await colyseusClient.joinOrCreate("hub", { townId, character });
+    wireRoomMessages(roomClient, "hub");
   } catch (e) {
     console.warn("Multiplayer unavailable, solo mode", e);
     notify("Solo mode (server WS optional)", "info");
@@ -414,11 +489,9 @@ async function enterGame(): Promise<void> {
 
 function addOther(p: { id: string; name?: string; archetype?: string; x: number; y: number; z: number; yaw: number }): void {
   if (otherPlayers.has(p.id)) return;
-  const m = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
-    new THREE.MeshStandardMaterial({ color: 0x4a6fa5 })
-  );
-  m.position.set(p.x, 1.1, p.z);
+  const m = createPartyAvatar(p.archetype || "steelguard", "m");
+  m.position.set(p.x, 0, p.z);
+  m.rotation.y = p.yaw || 0;
   world.scene.add(m);
   otherPlayers.set(p.id, m);
 }
@@ -631,7 +704,22 @@ function showQuestPanel(): void {
   if (!character) return;
   const hasPact = character.inventory.some((i) => i.itemId === "pactcinder");
   const hasFox = character.inventory.some((i) => i.itemId === "foxbrand_axe");
+  const hasSigil = character.inventory.some((i) => i.itemId === "cult_sigil");
+  const hasHerbs =
+    character.inventory.some((i) => i.itemId === "herb_woundwort" && i.qty >= 1) &&
+    character.inventory.some((i) => i.itemId === "herb_frostleaf" && i.qty >= 1) &&
+    character.inventory.some((i) => i.itemId === "herb_emberroot" && i.qty >= 1);
+  const wolvesReady =
+    Number(character.questFlags.wolves ?? 0) >= 2 &&
+    character.questFlags.wolves !== "complete" &&
+    character.questFlags.wolves !== 3;
   const town = character.position.townId || "";
+  const anyAction =
+    (hasPact && (town === "irondeep" || town === "mirehold")) ||
+    hasFox ||
+    (wolvesReady && town === "rimeport") ||
+    (hasHerbs && town === "oakspire" && character.questFlags.herbs !== "complete") ||
+    (hasSigil && town === "rimeport" && character.questFlags.cult_sigil !== "complete");
   showPanel(
     `<h2>${t("ui.quests") || "Quests"}</h2>
     <div style="font-size:0.9rem;margin-bottom:10px">
@@ -639,6 +727,12 @@ function showQuestPanel(): void {
       ${hasPact ? " — " + (t("quest.pactcinder.ready") || "You carry the Pact Cinder.") : ""}</p>
       <p><strong>${t("quest.foxbrand.name")}</strong>: ${character.questFlags.foxbrand ?? 0}
       ${hasFox ? " — " + (t("quest.foxbrand.ready") || "You hold the Foxbrand Axe.") : ""}</p>
+      <p><strong>${t("quest.wolves.name")}</strong>: ${character.questFlags.wolves ?? 0}
+      ${wolvesReady ? " — " + t("quest.wolves.ready") : ""}</p>
+      <p><strong>${t("quest.herbs.name")}</strong>: ${character.questFlags.herbs ?? 0}
+      ${hasHerbs ? " — " + t("quest.herbs.ready") : ""}</p>
+      <p><strong>${t("quest.cult_sigil.name")}</strong>: ${character.questFlags.cult_sigil ?? 0}
+      ${hasSigil ? " — " + t("quest.cult_sigil.ready") : ""}</p>
     </div>
     ${
       hasPact && town === "irondeep"
@@ -656,7 +750,22 @@ function showQuestPanel(): void {
         : ""
     }
     ${
-      !hasPact && !hasFox
+      wolvesReady && town === "rimeport"
+        ? `<button class="btn primary" id="q-wolves">${t("quest.wolves.turnin")}</button>`
+        : ""
+    }
+    ${
+      hasHerbs && town === "oakspire" && character.questFlags.herbs !== "complete"
+        ? `<button class="btn primary" id="q-herbs">${t("quest.herbs.turnin")}</button>`
+        : ""
+    }
+    ${
+      hasSigil && town === "rimeport" && character.questFlags.cult_sigil !== "complete"
+        ? `<button class="btn primary" id="q-sigil">${t("quest.cult_sigil.turnin")}</button>`
+        : ""
+    }
+    ${
+      !anyAction
         ? `<p style="color:#b8a88a">${t("quest.hint") || "Speak to envoys, taverns, and clear dungeons."}</p>`
         : ""
     }`
@@ -668,6 +777,12 @@ function showQuestPanel(): void {
   if (sell) sell.onclick = () => void turnInQuest("pactcinder", "sell");
   const fox = document.getElementById("q-fox");
   if (fox) fox.onclick = () => void turnInQuest("foxbrand");
+  const wolves = document.getElementById("q-wolves");
+  if (wolves) wolves.onclick = () => void turnInQuest("wolves");
+  const herbs = document.getElementById("q-herbs");
+  if (herbs) herbs.onclick = () => void turnInQuest("herbs");
+  const sigil = document.getElementById("q-sigil");
+  if (sigil) sigil.onclick = () => void turnInQuest("cult_sigil");
 }
 
 async function turnInQuest(questId: string, choice?: string): Promise<void> {
@@ -693,6 +808,55 @@ async function turnInQuest(questId: string, choice?: string): Promise<void> {
   } catch (e: any) {
     notify(String(e.message || e), "warn");
   }
+}
+
+async function progressQuest(questId: string, stepId: string): Promise<void> {
+  if (!character) return;
+  try {
+    const data = await api("/api/quest/progress", {
+      method: "POST",
+      body: JSON.stringify({ characterId: character.id, questId, stepId }),
+    });
+    character = data.character;
+    updateHud();
+    notify(t("notify.quest_update"), "quest");
+    if (data.notifications) {
+      for (const n of data.notifications) {
+        try {
+          notify(t(n));
+        } catch {
+          notify(n);
+        }
+      }
+    }
+  } catch (e: any) {
+    notify(String(e.message || e), "warn");
+  }
+}
+
+async function openQuestBoard(): Promise<void> {
+  if (!character) return;
+  const wolvesDone = character.questFlags.wolves === "complete" || character.questFlags.wolves === 3;
+  const wolvesStarted = Boolean(character.questFlags.wolves);
+  showPanel(
+    `<h2>${t("place.quest_board")}</h2>
+    <p style="font-size:0.9rem;color:#b8a88a;margin-bottom:10px">${t("quest.wolves.step.board_notice.body")}</p>
+    ${
+      !wolvesDone && !wolvesStarted
+        ? `<button class="btn primary" id="qb-wolves">${t("quest.wolves.name")}</button>`
+        : `<p style="color:#8a9a7a">${t("quest.wolves.name")}: ${character.questFlags.wolves ?? "—"}</p>`
+    }
+    <button class="btn" id="qb-close" style="margin-top:8px">${t("ui.close")}</button>`
+  );
+  const take = document.getElementById("qb-wolves");
+  if (take) {
+    take.onclick = async () => {
+      await progressQuest("wolves", "board_notice");
+      document.getElementById("center-panel")!.classList.add("hidden");
+    };
+  }
+  const close = document.getElementById("qb-close");
+  if (close) close.onclick = () => document.getElementById("center-panel")!.classList.add("hidden");
 }
 
 function showTravel(): void {
@@ -835,16 +999,80 @@ async function enterDungeon(id: string): Promise<void> {
   dungeonId = id;
   roomId = data.room.id;
   mode = "dungeon";
+  // clear hub others
+  for (const [, m] of otherPlayers) world.scene.remove(m);
+  otherPlayers.clear();
   world.loadDungeonRoom(id, roomId!);
   player.position.set(0, 1.6, 8);
   player.yaw = Math.PI;
   document.getElementById("center-panel")!.classList.add("hidden");
   notify(t(data.room.introKey));
+  playSfx("door");
+  startAmbient("dungeon");
+  updateHud();
+
+  // Co-op: leave hub, join party dungeon instance
+  try {
+    if (roomClient) {
+      await roomClient.leave();
+      roomClient = null;
+    }
+    if (!colyseusClient) colyseusClient = new Client(WS_URL);
+    const partyId = party?.id || character.id; // solo party id = self
+    dungeonRoom = await colyseusClient.joinOrCreate("dungeon", {
+      dungeonId: id,
+      partyId,
+      roomId: roomId,
+      character,
+    });
+    wireRoomMessages(dungeonRoom, "dungeon");
+    notify(party ? "Joined party dungeon instance" : "Dungeon instance (invite party from hub)");
+  } catch (e) {
+    console.warn("Dungeon multiplayer unavailable", e);
+  }
+}
+
+async function leaveDungeonToHub(): Promise<void> {
+  if (dungeonRoom) {
+    try {
+      dungeonRoom.send("leave_dungeon");
+      await dungeonRoom.leave();
+    } catch {
+      /* ok */
+    }
+    dungeonRoom = null;
+  }
+  dungeonId = null;
+  roomId = null;
+  for (const [, m] of otherPlayers) world.scene.remove(m);
+  otherPlayers.clear();
+  const town = character?.position.townId || "rimeport";
+  world.loadTown(town);
+  player.position.set(0, 1.6, 10);
+  mode = "explore";
+  startAmbient("town");
+  playSfx("door");
+  if (character) {
+    character.position.dungeonId = undefined;
+    character.position.townId = town;
+  }
+  try {
+    if (!colyseusClient) colyseusClient = new Client(WS_URL);
+    roomClient = await colyseusClient.joinOrCreate("hub", { townId: town, character });
+    wireRoomMessages(roomClient, "hub");
+  } catch {
+    /* solo */
+  }
   updateHud();
 }
 
 async function startCombat(enemyType: string, count: number): Promise<void> {
   if (!character) return;
+  // Prefer shared multiplayer combat inside dungeon instance
+  if (dungeonRoom) {
+    dungeonRoom.send("start_combat", { enemyType, count });
+    return;
+  }
   const data = await api("/api/combat/start", {
     method: "POST",
     body: JSON.stringify({ characterId: character.id, enemyType, count }),
@@ -857,6 +1085,8 @@ async function startCombat(enemyType: string, count: number): Promise<void> {
   combatScene.setState(combat);
   combatScene.setSelected(null);
   renderCombat();
+  startAmbient("combat");
+  playSfx("ui_open");
   notify(t("combat.start"));
 }
 
@@ -922,6 +1152,15 @@ function renderCombat(): void {
 
 async function combatAction(action: object): Promise<void> {
   if (!character || !combat) return;
+  // Shared dungeon combat
+  if (dungeonRoom) {
+    const a = action as { kind?: string };
+    if (a.kind === "attack") playSfx("hit");
+    else if (a.kind === "cast") playSfx("cast");
+    else playSfx("ui_click");
+    dungeonRoom.send("combat_action", { action });
+    return;
+  }
   try {
     const data = await api("/api/combat/action", {
       method: "POST",
@@ -930,6 +1169,9 @@ async function combatAction(action: object): Promise<void> {
     combat = data.state;
     if (data.character) character = data.character;
     if (combat) combatScene.setState(combat);
+    const a = action as { kind?: string };
+    if (a.kind === "attack") playSfx("hit");
+    else if (a.kind === "cast") playSfx("cast");
     if (data.ended) {
       document.getElementById("combat-ui")!.classList.add("hidden");
       combat = null;
@@ -937,16 +1179,23 @@ async function combatAction(action: object): Promise<void> {
       mode = dungeonId ? "dungeon" : "explore";
       player.enabled = true;
       if (data.ended === "victory") {
+        playSfx("victory");
         notify(t("combat.victory"), "quest");
         if (data.exp) notify(t("notify.exp", { n: data.exp }));
+        startAmbient(dungeonId ? "dungeon" : "town");
       } else if (data.ended === "defeat") {
+        playSfx("defeat");
         notify(t("combat.defeat"), "warn");
         dungeonId = null;
         roomId = null;
         world.loadTown("rimeport");
         player.position.set(-8, 1.6, -4);
         mode = "explore";
-      } else notify(t("combat.fled"));
+        startAmbient("town");
+      } else {
+        notify(t("combat.fled"));
+        startAmbient(dungeonId ? "dungeon" : "town");
+      }
       updateHud();
       return;
     }
@@ -989,17 +1238,17 @@ function showDialogue(): void {
         dialogue = { ...dialogue!, textKey: key };
         showDialogue();
         if (topic === "pactcinder" && character && !character.questFlags.pactcinder) {
-          character.questFlags.pactcinder = 1;
-          character.journal.push({
-            id: "j_pactcinder",
-            questId: "pactcinder",
-            titleKey: "journal.pactcinder.title",
-            bodyKey: "journal.pactcinder.body",
-            timestamp: Date.now(),
-            clue: true,
+          void progressQuest("pactcinder", "hear_envoy").then(() => {
+            if (character) {
+              character.knownMapNodes = [...new Set([...character.knownMapNodes, "mine_ash_entrance", "road_south"])];
+            }
           });
-          character.knownMapNodes = [...new Set([...character.knownMapNodes, "mine_ash_entrance", "road_south"])];
-          notify(t("notify.quest_update"), "quest");
+        }
+        if (topic === "rumors" && character && !character.questFlags.foxbrand) {
+          void progressQuest("foxbrand", "tavern_rumor");
+        }
+        if (topic === "foxbrand" && character && character.questFlags.foxbrand) {
+          void progressQuest("foxbrand", "smith_mooniron");
         }
       }
       if (topic === "farewell") {
@@ -1032,21 +1281,17 @@ async function tryInteract(): Promise<void> {
     showTravel();
     return;
   }
+  if (near.kind === "quest_board") {
+    await openQuestBoard();
+    return;
+  }
   if (near.kind === "encounter") {
     const type = near.id.replace("encounter_", "");
     await startCombat(type, type === "ash_guardian" ? 1 : 2);
     return;
   }
   if (near.kind === "exit") {
-    dungeonId = null;
-    roomId = null;
-    const town = character.position.townId || "rimeport";
-    world.loadTown(town);
-    player.position.set(0, 1.6, 10);
-    mode = "explore";
-    character.position.dungeonId = undefined;
-    character.position.townId = town;
-    updateHud();
+    await leaveDungeonToHub();
     notify(t("ui.leave"));
     return;
   }
@@ -1059,6 +1304,8 @@ async function tryInteract(): Promise<void> {
       roomId = to;
       world.loadDungeonRoom(dungeonId, to);
       player.position.set(0, 1.6, 6);
+      if (dungeonRoom) dungeonRoom.send("change_room", { roomId: to });
+      playSfx("door");
       const nr = dungeon.rooms.find((r) => r.id === to);
       if (nr) notify(t(nr.introKey));
     }
@@ -1105,7 +1352,8 @@ document.getElementById("chat-input")!.addEventListener("keydown", (e) => {
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
-  if (roomClient) roomClient.send("chat", { channel: "local", text });
+  if (dungeonRoom) dungeonRoom.send("chat", { text });
+  else if (roomClient) roomClient.send("chat", { channel: "local", text });
   else {
     const log = document.getElementById("chat-log")!;
     const line = document.createElement("div");
@@ -1115,8 +1363,12 @@ document.getElementById("chat-input")!.addEventListener("keydown", (e) => {
 });
 
 // Title buttons
-document.getElementById("btn-guest")!.onclick = () => ensureGuestAndQuickStart();
+document.getElementById("btn-guest")!.onclick = () => {
+  unlockAudio();
+  void ensureGuestAndQuickStart();
+};
 document.getElementById("btn-create")!.onclick = async () => {
+  unlockAudio();
   document.getElementById("title-screen")!.classList.add("hidden");
   mode = "create";
   if (!token) {
@@ -1132,6 +1384,19 @@ document.getElementById("btn-create")!.onclick = async () => {
   renderCreate();
 };
 
+// Mute toggle
+const muteBtn = document.createElement("button");
+muteBtn.className = "btn lang-toggle";
+muteBtn.style.top = "48px";
+muteBtn.id = "mute-btn";
+muteBtn.textContent = isMuted() ? "Unmute" : "Mute";
+document.getElementById("title-screen")!.appendChild(muteBtn);
+muteBtn.onclick = () => {
+  setMuted(!isMuted());
+  muteBtn.textContent = isMuted() ? "Unmute" : "Mute";
+  playSfx("ui_click");
+};
+
 // Move sync
 let moveAcc = 0;
 function loop(t: number): void {
@@ -1144,14 +1409,16 @@ function loop(t: number): void {
     player.update(dt, (x, z) => Math.abs(x) > 20 || Math.abs(z) > 20);
     player.applyToCamera(world.camera);
     moveAcc += dt;
-    if (moveAcc > 0.1 && roomClient && character) {
+    if (moveAcc > 0.1 && character) {
       moveAcc = 0;
-      roomClient.send("move", {
+      const payload = {
         x: player.position.x,
         y: player.position.y,
         z: player.position.z,
         yaw: player.yaw,
-      });
+      };
+      if (dungeonRoom) dungeonRoom.send("move", payload);
+      else if (roomClient) roomClient.send("move", payload);
     }
     const near = world.nearestInteractable(player.position);
     const prompt = document.getElementById("interact-prompt")!;
