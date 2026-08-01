@@ -394,7 +394,7 @@ async function enterGame(): Promise<void> {
   notify(t("journal.arrival.body").slice(0, 80) + "…", "quest");
 }
 
-function addOther(p: { id: string; x: number; y: number; z: number; yaw: number }): void {
+function addOther(p: { id: string; name?: string; archetype?: string; x: number; y: number; z: number; yaw: number }): void {
   if (otherPlayers.has(p.id)) return;
   const m = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
@@ -599,7 +599,7 @@ async function doTravel(from: string, to: string): Promise<void> {
       return;
     }
     const dest = NODE_BY_ID[to];
-    if (dest?.kind === "town") {
+    if (dest?.kind === "town" && character) {
       character.position.townId = to;
       character.position.dungeonId = undefined;
       world.loadTown(to);
@@ -953,7 +953,7 @@ function loop(t: number): void {
     }
     const near = world.nearestInteractable(player.position);
     const prompt = document.getElementById("interact-prompt")!;
-    if (near && mode !== "combat") {
+    if (near) {
       prompt.classList.remove("hidden");
       prompt.textContent = `[E] ${near.kind === "npc" ? t("ui.talk") : near.kind}`;
     } else prompt.classList.add("hidden");

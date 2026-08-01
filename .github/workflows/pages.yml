@@ -30,6 +30,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Build workspace packages
+        run: |
+          npm run build -w @embertrail/shared
+          npm run build -w @embertrail/rules
+          npm run build -w @embertrail/content
+
       - name: Build client for Pages
         env:
           GITHUB_PAGES: "true"
