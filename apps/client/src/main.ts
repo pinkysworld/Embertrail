@@ -7,8 +7,8 @@ import { t, getLocale, setLocale, toggleLocale } from "./i18n";
 import { WorldScene } from "./game/world";
 import { CombatScene } from "./game/combatScene";
 import { PlayerController } from "./game/player";
-import { isOfflineMode, offlineApi } from "./offlineApi";
-import { SHOPS } from "@embertrail/content";
+import { isOfflineMode, offlineApi, getOfflineCharacter } from "./offlineApi";
+import { SHOPS, QUESTS } from "@embertrail/content";
 import { ALCHEMY_RECIPES } from "@embertrail/rules";
 import {
   unlockAudio,
@@ -76,6 +76,7 @@ app.innerHTML = `
     <p id="title-sub"></p>
     <div class="title-actions">
       <button class="btn primary" id="btn-guest"></button>
+      <button class="btn primary hidden" id="btn-continue"></button>
       <button class="btn" id="btn-create"></button>
     </div>
   </div>
@@ -241,10 +242,68 @@ function notify(text: string, kind = "info"): void {
   if (kind === "quest") {
     el.style.borderColor = "#b8860b";
     playSfx("quest");
+  } else if (kind === "loot") {
+    el.style.borderColor = "#52b788";
+    playSfx("buy");
   } else if (kind === "warn") playSfx("miss");
   else playSfx("notify");
   document.getElementById("notify-stack")!.appendChild(el);
   setTimeout(() => el.remove(), 4500);
+}
+
+/** Translate combat log keys like combat.hit:A:B:5 */
+function formatCombatLog(entry: string): string {
+  const [key, ...rest] = entry.split(":");
+  const translated = t(key);
+  if (translated !== key) {
+    if (rest.length === 0) return translated;
+    if (key === "combat.hit" && rest.length >= 3) {
+      return `${rest[0]} → ${rest[1]}  ${rest[2]} dmg`;
+    }
+    if (key === "combat.miss" && rest.length >= 2) {
+      return `${rest[0]} misses ${rest[1]}`;
+    }
+    if (key === "combat.heal" && rest.length >= 3) {
+      return `${rest[0]} heals ${rest[2]}`;
+    }
+    if (key === "combat.move") return `${rest[0]} moves`;
+    if (key === "combat.defend") return `${rest[0]} defends`;
+    return `${translated} ${rest.join(" ")}`.trim();
+  }
+  if (key === "combat.hit" && rest.length >= 3) return `${rest[0]} hits ${rest[1]} for ${rest[2]}!`;
+  if (key === "combat.miss" && rest.length >= 2) return `${rest[0]} misses ${rest[1]}`;
+  if (key === "combat.heal" && rest.length >= 3) return `Healed ${rest[2]} life`;
+  if (key === "combat.spark" && rest.length >= 3) return `Spark hits ${rest[1]} for ${rest[2]}`;
+  if (key === "combat.move") return `${rest[0] || "Hero"} moves`;
+  if (key === "combat.defend") return `${rest[0] || "Hero"} braces`;
+  if (key === "combat.start") return t("combat.start") || "Fight!";
+  if (key === "combat.fled") return t("combat.fled") || "Fled";
+  if (key === "combat.flee_fail") return "Could not flee!";
+  return entry.replace(/combat\./g, "").replace(/:/g, " ");
+}
+
+function showCoach(steps: string[]): void {
+  if (!steps.length) return;
+  let i = 0;
+  const show = () => {
+    if (i >= steps.length) return;
+    showPanel(
+      `<h2>${t("ui.help") || "How to play"}</h2>
+      <p style="line-height:1.45">${steps[i]}</p>
+      <button class="btn primary" id="coach-next">${i < steps.length - 1 ? t("ui.continue") || "Next" : t("ui.close")}</button>`
+    );
+    document.getElementById("coach-next")!.onclick = () => {
+      i++;
+      if (i >= steps.length) {
+        document.getElementById("center-panel")!.classList.add("hidden");
+        player.enabled = true;
+        localStorage.setItem("embertrail_coach_done", "1");
+      } else show();
+    };
+  };
+  player.enabled = false;
+  document.exitPointerLock?.();
+  show();
 }
 
 function refreshI18nChrome(): void {
@@ -252,9 +311,14 @@ function refreshI18nChrome(): void {
   (document.getElementById("title-sub") as HTMLElement).textContent = t("app.subtitle");
   (document.getElementById("btn-guest") as HTMLElement).textContent = t("ui.play");
   (document.getElementById("btn-create") as HTMLElement).textContent = t("ui.create");
+  const cont = document.getElementById("btn-continue");
+  if (cont) cont.textContent = t("ui.continue") || "Continue";
   (document.getElementById("lang-btn") as HTMLElement).textContent =
     getLocale() === "en" ? "Deutsch" : "English";
   (document.getElementById("chat-input") as HTMLInputElement).placeholder = t("ui.chat");
+  // Show Continue when a solo save exists
+  const saved = OFFLINE ? getOfflineCharacter() : null;
+  if (cont) cont.classList.toggle("hidden", !saved);
 }
 
 document.getElementById("lang-btn")!.onclick = () => {
@@ -623,6 +687,23 @@ async function enterGame(): Promise<void> {
 
   player.onInteract = () => tryInteract();
   notify(t("journal.arrival.body").slice(0, 80) + "…", "quest");
+
+  // First-run coach (once per browser)
+  if (!localStorage.getItem("embertrail_coach_done")) {
+    setTimeout(() => {
+      showCoach([
+        getLocale() === "de"
+          ? "Willkommen in Rimeport. <b>WASD</b> bewegen, Maus umsehen, <b>E</b> interagieren. Auf dem Handy: linker Stick + rechte Seite zum Umschauen."
+          : "Welcome to Rimeport. <b>WASD</b> move, mouse look, <b>E</b> to interact. On phone: left stick + drag right side to look.",
+        getLocale() === "de"
+          ? "Gelbe <b>Quest-Marken</b> zeigen wichtige NPCs und Dungeons. Sprich mit dem <b>Gesandten</b> (Paktglut) oder lies das <b>Questbrett</b> (Wölfe)."
+          : "Yellow <b>quest pins</b> mark key NPCs and dungeons. Talk to the <b>Envoy</b> (Pact Cinder) or the <b>quest board</b> (wolves).",
+        getLocale() === "de"
+          ? "Im Kampf: zuerst <b>Bewegen</b> (bis 3 Felder), dann angreifen. Trefferchance steht auf den Buttons. Tränke im Inventar heilen dich."
+          : "In combat: <b>Move</b> first (up to 3 tiles), then Attack. Hit chance is on the buttons. Use potions from Inventory to heal.",
+      ]);
+    }, 600);
+  }
 }
 
 function addOther(p: { id: string; name?: string; archetype?: string; x: number; y: number; z: number; yaw: number }): void {
@@ -715,13 +796,17 @@ function itemIconHtml(itemId: string, size = 28): string {
 
 function showInventory(): void {
   if (!character) return;
+  const usable = new Set(["potion_heal", "potion_focus", "ration", "rations_pack"]);
   showPanel(
     `<h2>${t("ui.inventory")}</h2>
     <div class="inv-grid" style="display:flex;flex-direction:column;gap:6px;font-size:0.9rem">${character.inventory
-      .map(
-        (i) =>
-          `<div class="inv-slot">${itemIconHtml(i.itemId, 36)}<span>${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}</span></div>`
-      )
+      .map((i) => {
+        const canUse = usable.has(i.itemId);
+        return `<div class="inv-slot">${itemIconHtml(i.itemId, 36)}
+          <span style="flex:1">${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}</span>
+          ${canUse ? `<button class="btn" data-use="${i.itemId}">${t("ui.use") || "Use"}</button>` : ""}
+        </div>`;
+      })
       .join("")}</div>
     <h3 style="margin-top:12px">${t("ui.skills")}</h3>
     <div class="skill-list">${Object.entries(character.skills)
@@ -729,6 +814,26 @@ function showInventory(): void {
       .map(([k, v]) => `<div class="skill-row"><span>${t(`skill.${k}`)}</span><span>${v}</span></div>`)
       .join("")}</div>`
   );
+  document.querySelectorAll("#center-panel [data-use]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      try {
+        const data = await api("/api/item/use", {
+          method: "POST",
+          body: JSON.stringify({
+            characterId: character!.id,
+            itemId: (btn as HTMLElement).dataset.use,
+          }),
+        });
+        character = data.character;
+        updateHud();
+        playSfx("cast");
+        notify(t(data.notification || "notify.healed") || "Used item", "loot");
+        showInventory();
+      } catch (e: any) {
+        notify(String(e.message || e), "warn");
+      }
+    };
+  });
 }
 
 async function doCamp(): Promise<void> {
@@ -875,20 +980,42 @@ function showQuestPanel(): void {
     (hasHerbs && town === "oakspire" && character.questFlags.herbs !== "complete") ||
     (hasSigil && town === "rimeport" && character.questFlags.cult_sigil !== "complete");
   const pin = `<img class="quest-pin" src="${BASE}ui/quest_marker.png" alt="" />`;
+  const questHtml = Object.values(QUESTS)
+    .map((q) => {
+      const flag = character!.questFlags[q.id];
+      const complete = flag === "complete" || flag === 3 || flag === "done";
+      // Pick first step whose requires are met or first step if not started
+      let step = q.steps[0];
+      for (const s of q.steps) {
+        if (!s.requires) {
+          step = s;
+          if (!flag) break;
+          continue;
+        }
+        const ok = Object.entries(s.requires).every(([k, v]) => character!.questFlags[k] === v || Number(character!.questFlags[k]) >= Number(v));
+        if (ok) step = s;
+      }
+      const place = step.locationHint ? t(`place.${step.locationHint}`) || step.locationHint : "";
+      return `<div style="margin:10px 0;padding-bottom:8px;border-bottom:1px solid rgba(107,90,69,0.4)">
+        <div>${pin}<strong>${t(q.nameKey)}</strong> ${complete ? "✓" : ""}</div>
+        ${
+          complete
+            ? `<div style="font-size:0.85rem;color:#8a9a7a">${t("quest.complete") || "Complete"}</div>`
+            : `<div style="font-size:0.9rem;margin-top:4px"><em>${t(step.titleKey)}</em></div>
+               <div style="font-size:0.85rem;color:#c4b49a">${t(step.bodyKey)}</div>
+               ${place ? `<div style="font-size:0.8rem;color:#b8860b;margin-top:4px">→ ${place}</div>` : ""}`
+        }
+        ${q.id === "pactcinder" && hasPact ? `<div style="color:#52b788;font-size:0.85rem">${t("quest.pactcinder.ready") || "You carry the Pact Cinder."}</div>` : ""}
+        ${q.id === "foxbrand" && hasFox ? `<div style="color:#52b788;font-size:0.85rem">${t("quest.foxbrand.ready") || "You hold the Foxbrand Axe."}</div>` : ""}
+        ${q.id === "wolves" && wolvesReady ? `<div style="color:#52b788;font-size:0.85rem">${t("quest.wolves.ready") || "Return to Rimeport."}</div>` : ""}
+        ${q.id === "herbs" && hasHerbs ? `<div style="color:#52b788;font-size:0.85rem">${t("quest.herbs.ready") || "Deliver herbs."}</div>` : ""}
+        ${q.id === "cult_sigil" && hasSigil ? `<div style="color:#52b788;font-size:0.85rem">${t("quest.cult_sigil.ready") || "Report the sigil."}</div>` : ""}
+      </div>`;
+    })
+    .join("");
   showPanel(
     `<h2>${pin}${t("ui.quests") || "Quests"}</h2>
-    <div style="font-size:0.9rem;margin-bottom:10px">
-      <p>${pin}<strong>${t("quest.pactcinder.name")}</strong>: ${character.questFlags.pactcinder ?? 0}
-      ${hasPact ? " — " + (t("quest.pactcinder.ready") || "You carry the Pact Cinder.") : ""}</p>
-      <p>${pin}<strong>${t("quest.foxbrand.name")}</strong>: ${character.questFlags.foxbrand ?? 0}
-      ${hasFox ? " — " + (t("quest.foxbrand.ready") || "You hold the Foxbrand Axe.") : ""}</p>
-      <p>${pin}<strong>${t("quest.wolves.name")}</strong>: ${character.questFlags.wolves ?? 0}
-      ${wolvesReady ? " — " + t("quest.wolves.ready") : ""}</p>
-      <p>${pin}<strong>${t("quest.herbs.name")}</strong>: ${character.questFlags.herbs ?? 0}
-      ${hasHerbs ? " — " + t("quest.herbs.ready") : ""}</p>
-      <p>${pin}<strong>${t("quest.cult_sigil.name")}</strong>: ${character.questFlags.cult_sigil ?? 0}
-      ${hasSigil ? " — " + t("quest.cult_sigil.ready") : ""}</p>
-    </div>
+    <div style="font-size:0.9rem;margin-bottom:10px">${questHtml}</div>
     ${
       hasPact && town === "irondeep"
         ? `<button class="btn primary" id="q-alliance">${t("quest.pactcinder.alliance") || "Deliver to alliance (Irondeep)"}</button>`
@@ -1107,11 +1234,6 @@ async function doTravel(from: string, to: string): Promise<void> {
         notify(n);
       }
     }
-    if (data.leg?.event?.kind === "combat") {
-      document.getElementById("center-panel")!.classList.add("hidden");
-      await startCombat("wolf", 2);
-      return;
-    }
     const dest = NODE_BY_ID[to];
     if (dest?.kind === "town" && character) {
       character.position.townId = to;
@@ -1119,7 +1241,6 @@ async function doTravel(from: string, to: string): Promise<void> {
       world.loadTown(to);
       player.position.set(TOWNS[to].spawn.x, 1.6, TOWNS[to].spawn.z);
       mode = "explore";
-      // rejoin hub
       try {
         roomClient?.leave();
         const client = new Client(WS_URL);
@@ -1139,6 +1260,59 @@ async function doTravel(from: string, to: string): Promise<void> {
     document.getElementById("center-panel")!.classList.add("hidden");
     updateHud();
     notify(`${t("ui.travel")}: ${t(dest?.nameKey || "place.rimeport")}`);
+
+    // Fun travel encounters
+    const ev = data.leg?.event as
+      | {
+          kind?: string;
+          enemyType?: string;
+          count?: number;
+          textKey?: string;
+          choices?: Array<{ id: string; labelKey: string }>;
+        }
+      | undefined;
+    if (ev?.kind === "combat") {
+      await startCombat(ev.enemyType || "wolf", ev.count || 2);
+      return;
+    }
+    if (ev?.kind === "story" || ev?.kind === "discovery" || (ev?.choices && ev.choices.length)) {
+      const choices = ev.choices?.length
+        ? ev.choices
+        : [{ id: "press_on", labelKey: "ui.continue" }];
+      showPanel(
+        `<h2>${t("ui.travel")}</h2>
+        <p>${t(ev.textKey || "journal.arrival.body")}</p>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+          ${choices.map((c) => `<button class="btn" data-tev="${c.id}">${t(c.labelKey) || c.id}</button>`).join("")}
+        </div>`
+      );
+      document.querySelectorAll("#center-panel [data-tev]").forEach((b) => {
+        (b as HTMLButtonElement).onclick = async () => {
+          const id = (b as HTMLElement).dataset.tev!;
+          document.getElementById("center-panel")!.classList.add("hidden");
+          if (id === "explore" || id === "fight" || id === "ambush") {
+            await startCombat("wolf", 1);
+          } else if (id === "trade") {
+            notify(getLocale() === "de" ? "Du tauschst ein paar Münzen und Kräuter." : "You trade a few coins and herbs.", "loot");
+            if (character) {
+              character.copper = (character.copper || 0) + 12;
+              character.inventory = [...character.inventory, { itemId: "herb_woundwort", qty: 1 }];
+              // merge if exists
+              const stacks = new Map<string, number>();
+              for (const it of character.inventory) {
+                stacks.set(it.itemId, (stacks.get(it.itemId) || 0) + it.qty);
+              }
+              character.inventory = [...stacks.entries()].map(([itemId, qty]) => ({ itemId, qty }));
+              updateHud();
+            }
+          } else {
+            notify(getLocale() === "de" ? "Ihr zieht weiter." : "You press on.", "info");
+          }
+          player.enabled = true;
+        };
+      });
+      return;
+    }
   } catch (e: any) {
     notify(String(e.message || e), "warn");
   }
@@ -1246,6 +1420,44 @@ async function startCombat(enemyType: string, count: number): Promise<void> {
   notify(t("combat.start"));
 }
 
+function combatLegalMoves(me: { x: number; y: number }): Array<{ x: number; y: number }> {
+  if (!combat) return [];
+  const blocked = new Set(combat.blocked.map((b) => `${b.x},${b.y}`));
+  const occ = new Set(
+    combat.combatants.filter((c) => c.life > 0).map((c) => `${c.x},${c.y}`)
+  );
+  const out: Array<{ x: number; y: number }> = [];
+  for (let x = 0; x < combat.width; x++) {
+    for (let y = 0; y < combat.height; y++) {
+      const dist = Math.abs(x - me.x) + Math.abs(y - me.y);
+      if (dist < 1 || dist > 3) continue;
+      const k = `${x},${y}`;
+      if (blocked.has(k) || occ.has(k)) continue;
+      out.push({ x, y });
+    }
+  }
+  return out;
+}
+
+/** Best move tile that reduces distance to target (Manhattan, max step 3). */
+function stepToward(
+  me: { x: number; y: number },
+  target: { x: number; y: number }
+): { x: number; y: number } | null {
+  const moves = combatLegalMoves(me);
+  if (!moves.length) return null;
+  let best = moves[0];
+  let bestD = 999;
+  for (const m of moves) {
+    const d = Math.abs(m.x - target.x) + Math.abs(m.y - target.y);
+    if (d < bestD) {
+      bestD = d;
+      best = m;
+    }
+  }
+  return best;
+}
+
 function renderCombat(): void {
   const ui = document.getElementById("combat-ui")!;
   if (!combat || !character) {
@@ -1256,27 +1468,47 @@ function renderCombat(): void {
   const me = combat.combatants.find((c) => c.id === character!.id);
   const enemies = combat.combatants.filter((c) => c.side === "enemy" && c.life > 0);
   const active = combat.activeId === character.id;
+  const potions = character.inventory.filter((i) => i.itemId === "potion_heal" || i.itemId === "potion_focus");
   ui.innerHTML = `
     <h2>${t("mode.combat")} · R${combat.round}</h2>
     <div style="font-size:0.85rem;margin-bottom:8px">
       ${combat.combatants
         .map(
           (c) =>
-            `<div style="color:${c.id === combat!.activeId ? "#b8860b" : "#c4b49a"}">${c.name}: ${c.life}/${c.lifeMax} LE · AT${c.at}/PA${c.pa}</div>`
+            `<div style="color:${c.id === combat!.activeId ? "#b8860b" : c.life <= 0 ? "#666" : "#c4b49a"}">${c.name}: ${c.life}/${c.lifeMax} LE · AT${c.at}/PA${c.pa}${c.life <= 0 ? " ✕" : ""}</div>`
         )
         .join("")}
     </div>
     ${
-      active
+      active && me
         ? `<div style="display:flex;flex-direction:column;gap:6px">
+        <p style="font-size:0.8rem;color:#b8a88a;margin:0">Click a green tile on the board to move (max 3), or:</p>
         ${enemies
           .map((e) => {
-            const chance = me ? hitChancePercent(me.at, e.pa) : 50;
-            return `<button class="btn danger" data-atk="${e.id}">${t("ui.attack")} ${e.name} (${t("ui.hit_chance")} ${chance}%)</button>`;
+            const toward = stepToward(me, e);
+            const adj =
+              Math.abs(me.x - e.x) <= 1 && Math.abs(me.y - e.y) <= 1 && !(me.x === e.x && me.y === e.y);
+            const chance = hitChancePercent(me.at, e.pa);
+            return `<div style="display:flex;flex-direction:column;gap:4px">
+              ${
+                toward && !adj
+                  ? `<button class="btn" data-movex="${toward.x}" data-movey="${toward.y}">${t("ui.move") || "Move"} → ${e.name}</button>`
+                  : ""
+              }
+              <button class="btn danger" data-atk="${e.id}" ${adj ? "" : 'title="Move adjacent first"'}>
+                ${t("ui.attack")} ${e.name} (${chance}%)${adj ? "" : " ⚠ range"}
+              </button>
+            </div>`;
           })
           .join("")}
         <button class="btn" id="c-def">${t("ui.defend")}</button>
         <button class="btn" id="c-flee">${t("ui.flee")}</button>
+        ${potions
+          .map(
+            (p) =>
+              `<button class="btn" data-item="${p.itemId}">${t("ui.use") || "Use"} ${t(`item.${p.itemId}`) || p.itemId} (×${p.qty})</button>`
+          )
+          .join("")}
         ${
           character.focusMax > 0
             ? `<button class="btn" id="c-spark">${t("ui.cast")}: Spark</button>
@@ -1284,13 +1516,25 @@ function renderCombat(): void {
             : ""
         }
       </div>`
-        : `<p>${t("combat.not_your_turn")}</p>`
+        : `<p>${t("combat.not_your_turn") || "Enemy turn…"}</p>`
     }
-    <div class="combat-grid-hint">${combat.log.slice(-4).join(" · ")}</div>
+    <div class="combat-grid-hint">${combat.log.slice(-5).map(formatCombatLog).join(" · ")}</div>
   `;
   ui.querySelectorAll("[data-atk]").forEach((b) => {
     (b as HTMLButtonElement).onclick = () =>
       combatAction({ kind: "attack", targetId: (b as HTMLElement).dataset.atk! });
+  });
+  ui.querySelectorAll("[data-movex]").forEach((b) => {
+    (b as HTMLButtonElement).onclick = () =>
+      combatAction({
+        kind: "move",
+        x: Number((b as HTMLElement).dataset.movex),
+        y: Number((b as HTMLElement).dataset.movey),
+      });
+  });
+  ui.querySelectorAll("[data-item]").forEach((b) => {
+    (b as HTMLButtonElement).onclick = () =>
+      combatAction({ kind: "item", itemId: (b as HTMLElement).dataset.item! });
   });
   const def = document.getElementById("c-def");
   if (def) def.onclick = () => combatAction({ kind: "defend" });
@@ -1304,6 +1548,21 @@ function renderCombat(): void {
     };
   const balm = document.getElementById("c-balm");
   if (balm) balm.onclick = () => combatAction({ kind: "cast", spellId: "balm", targetId: character!.id });
+
+  // Board click-to-move when it's your turn
+  if (active && me) {
+    combatScene.attachOrbit(canvas);
+    canvas.onclick = (ev) => {
+      if (mode !== "combat" || !combat) return;
+      const rect = canvas.getBoundingClientRect();
+      const ndcX = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+      const ndcY = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
+      const tile = combatScene.pickTile(ndcX, ndcY);
+      if (!tile) return;
+      const legal = combatLegalMoves(me).some((m) => m.x === tile.x && m.y === tile.y);
+      if (legal) void combatAction({ kind: "move", x: tile.x, y: tile.y });
+    };
+  }
 }
 
 async function combatAction(action: object): Promise<void> {
@@ -1311,25 +1570,55 @@ async function combatAction(action: object): Promise<void> {
   // Shared dungeon combat
   if (dungeonRoom) {
     const a = action as { kind?: string };
-    if (a.kind === "attack") playSfx("hit");
-    else if (a.kind === "cast") playSfx("cast");
-    else playSfx("ui_click");
+    playSfx(a.kind === "cast" || a.kind === "item" ? "cast" : "ui_click");
     dungeonRoom.send("combat_action", { action });
     return;
   }
   try {
+    const prevLogLen = combat.log.length;
     const data = await api("/api/combat/action", {
       method: "POST",
       body: JSON.stringify({ combatId: combat.id, characterId: character.id, action }),
     });
+    // Surface errors that didn't advance combat
+    if (data.notifications?.length && data.state?.activeId === character.id && data.state?.round === combat.round) {
+      const notes = data.notifications as string[];
+      if (notes.some((n) => n.includes("out_of_melee") || n.includes("invalid") || n.includes("occupied") || n.includes("too_far") || n.includes("not_your") || n.includes("no_item") || n.includes("bad"))) {
+        for (const n of notes) {
+          if (n === "combat.out_of_melee") notify(t("combat.out_of_melee") || "Too far — Move adjacent first!", "warn");
+          else if (n === "combat.move_too_far") notify("Too far to move (max 3 tiles)", "warn");
+          else if (n === "miss" || n === "combat.miss") {
+            /* handled below */
+          } else if (!n.startsWith("hit:") && !n.startsWith("heal:")) notify(t(n) || n, "warn");
+        }
+        if (notes.includes("combat.out_of_melee") || notes.includes("combat.move_too_far") || notes.includes("combat.occupied") || notes.includes("combat.invalid_tile") || notes.includes("combat.blocked") || notes.includes("combat.not_your_turn") || notes.includes("combat.no_item") || notes.includes("combat.bad_item")) {
+          playSfx("miss");
+          if (data.state) {
+            combat = data.state;
+            combatScene.setState(combat);
+          }
+          renderCombat();
+          return;
+        }
+      }
+    }
     combat = data.state;
     if (data.character) character = data.character;
     if (combat) combatScene.setState(combat);
     const a = action as { kind?: string };
-    if (a.kind === "attack") playSfx("hit");
-    else if (a.kind === "cast") playSfx("cast");
+    // SFX from log outcome
+    const newLogs: string[] = combat?.log.slice(prevLogLen) ?? [];
+    if (newLogs.some((l) => l.startsWith("combat.hit") || l.startsWith("combat.spark"))) playSfx("hit");
+    else if (newLogs.some((l) => l.startsWith("combat.miss"))) playSfx("miss");
+    else if (a.kind === "cast" || a.kind === "item") playSfx("cast");
+    else if (a.kind === "move") playSfx("ui_click");
+    if (data.notifications?.some((n: string) => String(n).startsWith("hit:"))) {
+      const h = data.notifications.find((n: string) => String(n).startsWith("hit:"));
+      if (h) notify(`Hit for ${String(h).split(":")[1]}!`, "loot");
+    }
     if (data.ended) {
       document.getElementById("combat-ui")!.classList.add("hidden");
+      canvas.onclick = null;
       combat = null;
       combatScene.setSelected(null);
       combatScene.detachOrbit();
@@ -1338,15 +1627,39 @@ async function combatAction(action: object): Promise<void> {
       if (data.ended === "victory") {
         playSfx("victory");
         notify(t("combat.victory"), "quest");
-        if (data.exp) notify(t("notify.exp", { n: data.exp }));
+        if (data.exp) notify(t("notify.exp", { n: data.exp }) || `+${data.exp} EXP`);
+        if (data.loot?.length) {
+          for (const L of data.loot as Array<{ itemId: string; qty: number }>) {
+            notify(
+              `+ ${L.qty}× ${t(`item.${L.itemId}`) || L.itemId}`,
+              "loot"
+            );
+          }
+        }
+        const prevLevel = character?.level ?? 1;
+        if (data.character) character = data.character;
+        if (character && character.level > prevLevel) {
+          playSfx("levelup");
+          notify(t("notify.levelup") || "Level up!", "quest");
+        }
         startAmbient(dungeonId ? "dungeon" : "town");
       } else if (data.ended === "defeat") {
         playSfx("defeat");
-        notify(t("combat.defeat"), "warn");
+        if (data.character) character = data.character;
         dungeonId = null;
         roomId = null;
         world.loadTown("rimeport");
         player.position.set(-8, 1.6, -4);
+        showPanel(
+          `<h2>${t("combat.defeat") || "Defeated"}</h2>
+          <p>${getLocale() === "de" ? "Du wachst in Rimeport auf — angeschlagen, aber am Leben. Heile im Tempel, am Lager, oder mit Tränken." : "You wake in Rimeport — battered but alive. Heal at the temple, camp, or use potions."}</p>
+          <button class="btn primary" id="defeat-ok">${t("ui.continue") || "Continue"}</button>`
+        );
+        document.getElementById("defeat-ok")!.onclick = () => {
+          document.getElementById("center-panel")!.classList.add("hidden");
+          player.enabled = true;
+        };
+        notify(t("combat.defeat"), "warn");
         mode = "explore";
         startAmbient("town");
       } else {
@@ -1535,6 +1848,18 @@ document.getElementById("chat-input")!.addEventListener("keydown", (e) => {
 document.getElementById("btn-guest")!.onclick = () => {
   unlockAudio();
   void ensureGuestAndQuickStart();
+};
+document.getElementById("btn-continue")!.onclick = async () => {
+  unlockAudio();
+  const saved = getOfflineCharacter();
+  if (!saved) {
+    notify("No save found — start a new game.", "warn");
+    return;
+  }
+  character = saved;
+  token = localStorage.getItem("embertrail_token") || "offline";
+  await enterGame();
+  notify(getLocale() === "de" ? `Willkommen zurück, ${saved.name}.` : `Welcome back, ${saved.name}.`, "quest");
 };
 document.getElementById("btn-create")!.onclick = async () => {
   unlockAudio();

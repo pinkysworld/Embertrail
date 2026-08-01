@@ -135,6 +135,10 @@ export function createCharacter(opts: {
     qty: itemId === "arrows" ? 20 : itemId === "rations_pack" ? 1 : 1,
     durability: 100,
   }));
+  // Always start with a healing potion so combat isn't a dead end
+  if (!inventory.some((i) => i.itemId === "potion_heal")) {
+    inventory.push({ itemId: "potion_heal", qty: 2, durability: 100 });
+  }
   // Expand rations pack
   const rations = 7;
 

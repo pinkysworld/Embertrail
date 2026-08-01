@@ -95,6 +95,11 @@ function saveCombat(state: CombatState | null): void {
   else localStorage.setItem(COMBAT_KEY, JSON.stringify(state));
 }
 
+/** Expose saved solo hero for Continue button */
+export function getOfflineCharacter(): CharacterSheet | null {
+  return loadChar();
+}
+
 export function isOfflineMode(): boolean {
   // GitHub Pages or explicit flag
   if (location.hostname.endsWith("github.io")) return true;
@@ -194,14 +199,53 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     return { character: after, leg, notifications };
   }
 
+  // Use consumable outside combat (heal/focus)
+  if (path === "/api/item/use" && method === "POST") {
+    const sheet = loadChar();
+    if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
+    const itemId = String(body.itemId);
+    const inv = removeItem(sheet.inventory, itemId, 1);
+    if (!inv) throw new Error("no_item");
+    const next: CharacterSheet = {
+      ...sheet,
+      inventory: inv,
+      questFlags: { ...sheet.questFlags },
+    };
+    let note = "notify.item_used";
+    if (itemId === "potion_heal") {
+      next.life = Math.min(next.lifeMax, next.life + 12);
+      note = "notify.healed";
+    } else if (itemId === "potion_focus") {
+      next.focus = Math.min(next.focusMax, next.focus + 8);
+      note = "notify.focus_restored";
+    } else if (itemId === "ration" || itemId === "rations_pack") {
+      const heal = itemId === "rations_pack" ? 8 : 5;
+      next.life = Math.min(next.lifeMax, next.life + heal);
+      if (itemId === "ration") next.rations = Math.max(0, next.rations - 0); // already removed item
+      note = "notify.healed";
+    } else {
+      throw new Error("not_usable");
+    }
+    saveChar(next);
+    return { character: next, notification: note };
+  }
+
   if (path === "/api/combat/start" && method === "POST") {
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
-    const party = [combatantFromCharacter(sheet, 1, 3)];
+    // Start near enemies so melee is playable without endless Defend
+    const party = [combatantFromCharacter(sheet, 3, 3)];
     const n = Math.min(4, Math.max(1, Number(body.count ?? 2)));
     const enemyType = String(body.enemyType ?? "wolf");
     const enemies = Array.from({ length: n }, (_, i) =>
-      makeEnemy(`e_${i}`, enemyType, `${enemyType} ${i + 1}`, 6 + (i % 2), 2 + i, sheet.level)
+      makeEnemy(
+        `e_${i}`,
+        enemyType,
+        `${enemyType} ${i + 1}`,
+        4 + (i % 2),
+        3 + Math.floor(i / 2),
+        sheet.level
+      )
     );
     const state = startCombat({ id: uid(), party, enemies });
     saveCombat(state);
@@ -214,6 +258,14 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
     const seed = Date.now() ^ body.combatId.length * 1000;
+    let action = body.action as { kind?: string; itemId?: string };
+    // Consume potions from inventory before applying combat item action
+    if (action.kind === "item" && action.itemId) {
+      const inv = removeItem(sheet.inventory, action.itemId, 1);
+      if (!inv) throw new Error("no_item");
+      sheet.inventory = inv;
+      saveChar(sheet);
+    }
     let result = applyCombatAction(state, body.characterId, body.action, seed, {
       [body.characterId]: sheet.equipped.mainHand,
     });

@@ -163,7 +163,8 @@ export const ENEMY_TEMPLATES: Record<
   string,
   { life: number; at: number; pa: number; ini: number; focus: number; damage: [number, number, number]; exp: number }
 > = {
-  wolf: { life: 12, at: 10, pa: 6, ini: 12, focus: 0, damage: [1, 6, 1], exp: 15 },
+  // Tutorial wolves: readable fight, not a wall
+  wolf: { life: 10, at: 9, pa: 5, ini: 11, focus: 0, damage: [1, 5, 0], exp: 18 },
   orc_raider: { life: 18, at: 12, pa: 8, ini: 9, focus: 0, damage: [1, 8, 2], exp: 25 },
   cultist: { life: 14, at: 9, pa: 7, ini: 10, focus: 8, damage: [1, 6, 0], exp: 20 },
   cave_beast: { life: 22, at: 11, pa: 7, ini: 8, focus: 0, damage: [2, 6, 0], exp: 30 },
@@ -246,9 +247,11 @@ export function applyCombatAction(
     if (!target || target.life <= 0 || target.side === actor.side) {
       return { state, notifications: ["combat.bad_target"] };
     }
-    const weaponId = weaponByActor[actor.id] ?? (actor.enemyType ? "unarmed" : "longsword");
+    // Party weapons from map; enemies use their template damage dice
+    const weaponId = weaponByActor[actor.id] ?? (actor.side === "party" ? "longsword" : "unarmed");
     const w = WEAPON_STATS[weaponId] ?? WEAPON_STATS.unarmed;
-    const ranged = w.ranged;
+    const tpl = actor.enemyType ? ENEMY_TEMPLATES[actor.enemyType] : undefined;
+    const ranged = w.ranged && !tpl;
     if (!ranged && !isAdjacent(actor, target, true)) {
       return { state, notifications: ["combat.out_of_melee"] };
     }
@@ -261,13 +264,15 @@ export function applyCombatAction(
     const chance = hitChancePercent(at, pa);
     const roll = 1 + Math.floor(rng() * 100);
     if (roll <= chance) {
-      const dmg = dice(rng, w.dice, w.sides) + w.bonus;
+      const dmg = tpl
+        ? dice(rng, tpl.damage[0], tpl.damage[1]) + tpl.damage[2]
+        : dice(rng, w.dice, w.sides) + w.bonus;
       target.life = Math.max(0, target.life - dmg);
       next.log.push(`combat.hit:${actor.name}:${target.name}:${dmg}`);
-      notes.push(`combat.hit_detail`);
+      notes.push(`hit:${dmg}`);
     } else {
       next.log.push(`combat.miss:${actor.name}:${target.name}`);
-      notes.push("combat.miss");
+      notes.push("miss");
     }
   } else if (action.kind === "defend") {
     actor.status = actor.status.filter((s) => s !== "defend");
@@ -310,7 +315,25 @@ export function applyCombatAction(
       next.log.push(`combat.cast:${action.spellId}`);
     }
   } else if (action.kind === "item") {
-    next.log.push(`combat.item:${action.itemId}`);
+    const itemId = action.itemId;
+    if (itemId === "potion_heal") {
+      const heal = 8 + dice(rng, 1, 8);
+      actor.life = Math.min(actor.lifeMax, actor.life + heal);
+      next.log.push(`combat.heal:${actor.name}:${actor.name}:${heal}`);
+      notes.push(`heal:${heal}`);
+    } else if (itemId === "potion_focus") {
+      const gain = 6 + dice(rng, 1, 6);
+      actor.focus = Math.min(actor.focusMax, actor.focus + gain);
+      next.log.push(`combat.focus:${actor.name}:${gain}`);
+      notes.push(`focus:${gain}`);
+    } else if (itemId === "ration") {
+      const heal = 4;
+      actor.life = Math.min(actor.lifeMax, actor.life + heal);
+      next.log.push(`combat.heal:${actor.name}:${actor.name}:${heal}`);
+      notes.push(`heal:${heal}`);
+    } else {
+      return { state, notifications: ["combat.bad_item"] };
+    }
   }
 
   // Clear defend on next turn start for others handled below
