@@ -101,10 +101,21 @@ export function getOfflineCharacter(): CharacterSheet | null {
 }
 
 export function isOfflineMode(): boolean {
-  // GitHub Pages or explicit flag
+  // GitHub Pages, file://, localhost without server, or explicit flag
+  if (typeof location === "undefined") return true;
   if (location.hostname.endsWith("github.io")) return true;
+  if (location.protocol === "file:") return true;
   if (localStorage.getItem("embertrail_offline") === "1") return true;
+  // minh.systems / any static host without API
+  if (location.port === "" && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    return true;
+  }
   return false;
+}
+
+/** Persist solo character (position / HP) between sessions */
+export function saveOfflineCharacter(sheet: CharacterSheet): void {
+  saveChar(sheet);
 }
 
 export async function offlineApi(path: string, opts: RequestInit = {}): Promise<any> {

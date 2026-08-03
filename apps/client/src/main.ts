@@ -7,7 +7,7 @@ import { t, getLocale, setLocale, toggleLocale } from "./i18n";
 import { WorldScene } from "./game/world";
 import { CombatScene } from "./game/combatScene";
 import { PlayerController } from "./game/player";
-import { isOfflineMode, offlineApi, getOfflineCharacter } from "./offlineApi";
+import { isOfflineMode, offlineApi, getOfflineCharacter, saveOfflineCharacter } from "./offlineApi";
 import { SHOPS, QUESTS } from "@embertrail/content";
 import { ALCHEMY_RECIPES } from "@embertrail/rules";
 import {
@@ -188,12 +188,16 @@ function setupMobileControls(): void {
   );
 
   // Show/hide with game mode
+  let lookHintShownAt = 0;
   const syncMobileUi = () => {
     const playing = mode === "explore" || mode === "dungeon";
     mc.classList.toggle("hidden", !playing);
     mc.classList.toggle("show-controls", playing);
     mc.setAttribute("aria-hidden", playing ? "false" : "true");
-    lookHint.style.display = playing ? "block" : "none";
+    if (playing && !lookHintShownAt) lookHintShownAt = Date.now();
+    // Hide look hint after 12s so it doesn't clutter combat return
+    const showHint = playing && Date.now() - lookHintShownAt < 12000;
+    lookHint.style.display = showHint ? "block" : "none";
   };
   // poll lightly via existing loop by exporting
   (window as any).__embertrailSyncMobile = syncMobileUi;
@@ -316,8 +320,8 @@ function refreshI18nChrome(): void {
   (document.getElementById("lang-btn") as HTMLElement).textContent =
     getLocale() === "en" ? "Deutsch" : "English";
   (document.getElementById("chat-input") as HTMLInputElement).placeholder = t("ui.chat");
-  // Show Continue when a solo save exists
-  const saved = OFFLINE ? getOfflineCharacter() : null;
+  // Continue whenever a local save exists (Pages + explicit offline)
+  const saved = getOfflineCharacter();
   if (cont) cont.classList.toggle("hidden", !saved);
 }
 
@@ -659,34 +663,63 @@ function wireRoomMessages(room: Awaited<ReturnType<Client["joinOrCreate"]>>, kin
 async function enterGame(): Promise<void> {
   if (!character) return;
   unlockAudio();
-  mode = "explore";
   document.getElementById("title-screen")!.classList.add("hidden");
   document.getElementById("hud")!.classList.remove("hidden");
-  document.getElementById("chat-box")!.classList.remove("hidden");
+  // Chat is noisy on mobile; keep available on desktop only
+  if (!player.touchMode) {
+    document.getElementById("chat-box")!.classList.remove("hidden");
+  }
   document.getElementById("mode-bar")!.classList.remove("hidden");
   document.getElementById("crosshair")!.classList.toggle("hidden", player.touchMode);
-  (window as any).__embertrailSyncMobile?.();
 
   const townId = character.position.townId || "rimeport";
-  world.loadTown(townId);
-  player.position.set(character.position.x, 1.6, character.position.z);
-  player.yaw = character.position.yaw;
+  const savedDungeon = character.position.dungeonId;
+
+  if (savedDungeon && DUNGEONS[savedDungeon]) {
+    dungeonId = savedDungeon;
+    roomId = DUNGEONS[savedDungeon].rooms[0]?.id ?? null;
+    mode = "dungeon";
+    if (roomId) world.loadDungeonRoom(savedDungeon, roomId);
+    startAmbient("dungeon");
+  } else {
+    mode = "explore";
+    dungeonId = null;
+    roomId = null;
+    world.loadTown(townId);
+    startAmbient("town");
+  }
+
+  player.position.set(
+    character.position.x ?? TOWNS[townId]?.spawn.x ?? 0,
+    character.position.y ?? 1.6,
+    character.position.z ?? TOWNS[townId]?.spawn.z ?? 10
+  );
+  player.yaw = character.position.yaw ?? 0;
   player.enabled = true;
   updateHud();
   renderModeBar();
-  startAmbient("town");
+  (window as any).__embertrailSyncMobile?.();
 
-  try {
-    colyseusClient = new Client(WS_URL);
-    roomClient = await colyseusClient.joinOrCreate("hub", { townId, character });
-    wireRoomMessages(roomClient, "hub");
-  } catch (e) {
-    console.warn("Multiplayer unavailable, solo mode", e);
-    notify("Solo mode (server WS optional)", "info");
+  if (!savedDungeon) {
+    try {
+      colyseusClient = new Client(WS_URL);
+      roomClient = await colyseusClient.joinOrCreate("hub", { townId, character });
+      wireRoomMessages(roomClient, "hub");
+    } catch (e) {
+      console.warn("Multiplayer unavailable, solo mode", e);
+      if (!OFFLINE) notify("Solo mode (server WS optional)", "info");
+    }
   }
 
   player.onInteract = () => tryInteract();
   notify(t("journal.arrival.body").slice(0, 80) + "…", "quest");
+  if (OFFLINE) {
+    try {
+      saveOfflineCharacter(character);
+    } catch {
+      /* ok */
+    }
+  }
 
   // First-run coach (once per browser)
   if (!localStorage.getItem("embertrail_coach_done")) {
@@ -1482,21 +1515,26 @@ function renderCombat(): void {
     ${
       active && me
         ? `<div style="display:flex;flex-direction:column;gap:6px">
-        <p style="font-size:0.8rem;color:#b8a88a;margin:0">Click a green tile on the board to move (max 3), or:</p>
+        <p style="font-size:0.8rem;color:#b8a88a;margin:0">${
+          player.touchMode
+            ? "Tap Move, then Attack. Or use Charge to close in."
+            : "Move (button or click tile, max 3), then Attack."
+        }</p>
         ${enemies
           .map((e) => {
             const toward = stepToward(me, e);
             const adj =
               Math.abs(me.x - e.x) <= 1 && Math.abs(me.y - e.y) <= 1 && !(me.x === e.x && me.y === e.y);
             const chance = hitChancePercent(me.at, e.pa);
-            return `<div style="display:flex;flex-direction:column;gap:4px">
+            return `<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px">
               ${
                 toward && !adj
-                  ? `<button class="btn" data-movex="${toward.x}" data-movey="${toward.y}">${t("ui.move") || "Move"} → ${e.name}</button>`
+                  ? `<button class="btn" data-movex="${toward.x}" data-movey="${toward.y}">${t("ui.move") || "Move"} → ${e.name}</button>
+                     <button class="btn primary" data-charge="${e.id}" data-cx="${toward.x}" data-cy="${toward.y}">Charge → ${e.name}</button>`
                   : ""
               }
-              <button class="btn danger" data-atk="${e.id}" ${adj ? "" : 'title="Move adjacent first"'}>
-                ${t("ui.attack")} ${e.name} (${chance}%)${adj ? "" : " ⚠ range"}
+              <button class="btn danger" data-atk="${e.id}">
+                ${t("ui.attack")} ${e.name} (${chance}%)${adj ? "" : " · close first"}
               </button>
             </div>`;
           })
@@ -1531,6 +1569,30 @@ function renderCombat(): void {
         x: Number((b as HTMLElement).dataset.movex),
         y: Number((b as HTMLElement).dataset.movey),
       });
+  });
+  ui.querySelectorAll("[data-charge]").forEach((b) => {
+    (b as HTMLButtonElement).onclick = async () => {
+      const el = b as HTMLElement;
+      await combatAction({
+        kind: "move",
+        x: Number(el.dataset.cx),
+        y: Number(el.dataset.cy),
+      });
+      // After move, if still our turn and adjacent, strike
+      if (combat && character && combat.activeId === character.id) {
+        const me2 = combat.combatants.find((c) => c.id === character!.id);
+        const foe = combat.combatants.find((c) => c.id === el.dataset.charge && c.life > 0);
+        if (
+          me2 &&
+          foe &&
+          Math.abs(me2.x - foe.x) <= 1 &&
+          Math.abs(me2.y - foe.y) <= 1 &&
+          !(me2.x === foe.x && me2.y === foe.y)
+        ) {
+          await combatAction({ kind: "attack", targetId: foe.id });
+        }
+      }
+    };
   });
   ui.querySelectorAll("[data-item]").forEach((b) => {
     (b as HTMLButtonElement).onclick = () =>
@@ -1911,6 +1973,13 @@ function loop(t: number): void {
         z: player.position.z,
         yaw: player.yaw,
       };
+      character.position = {
+        ...character.position,
+        x: payload.x,
+        y: payload.y,
+        z: payload.z,
+        yaw: payload.yaw,
+      };
       if (dungeonRoom) dungeonRoom.send("move", payload);
       else if (roomClient) roomClient.send("move", payload);
     }
@@ -1944,6 +2013,26 @@ setInterval(() => {
     world.setTimeOfDay(t);
   }
 }, 1000);
+
+// Solo autosave every 4s while playing
+setInterval(() => {
+  if (!OFFLINE || !character) return;
+  if (mode !== "explore" && mode !== "dungeon") return;
+  character.position = {
+    ...character.position,
+    x: player.position.x,
+    y: player.position.y,
+    z: player.position.z,
+    yaw: player.yaw,
+    townId: character.position.townId,
+    dungeonId: character.position.dungeonId,
+  };
+  try {
+    saveOfflineCharacter(character);
+  } catch {
+    /* quota */
+  }
+}, 4000);
 
 refreshI18nChrome();
 document.getElementById("crosshair")!.classList.add("hidden");

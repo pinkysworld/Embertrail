@@ -549,29 +549,44 @@ body.touch-mode #btn-interact.show-interact {
     height: 72px;
   }
 
+  /* Keep action bar above the virtual stick, not over the HUD */
   #mode-bar {
-    bottom: auto;
-    top: max(110px, env(safe-area-inset-top) + 96px);
+    top: auto;
+    bottom: max(168px, calc(env(safe-area-inset-bottom) + 152px));
     left: 50%;
     transform: translateX(-50%);
     max-width: 96vw;
     gap: 4px;
+    z-index: 16;
   }
 
   #mode-bar .btn {
-    padding: 6px 8px;
-    font-size: 0.75rem;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    min-height: 40px;
   }
 
   #combat-ui {
     left: 8px !important;
     right: 8px !important;
     top: auto !important;
-    bottom: max(200px, env(safe-area-inset-bottom) + 180px);
+    bottom: max(8px, env(safe-area-inset-bottom));
     width: auto !important;
-    max-height: 38vh;
+    max-height: min(46vh, 360px);
     overflow: auto;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    z-index: 18;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #combat-ui .btn {
+    min-height: 44px;
+    font-size: 0.95rem;
+  }
+
+  /* Chat is desktop-first; hide on phones so it doesn't cover the stick */
+  #chat-box {
+    display: none !important;
   }
 
   #center-panel,
