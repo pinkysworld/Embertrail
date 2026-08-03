@@ -363,6 +363,7 @@ function refreshI18nChrome(): void {
   // Continue whenever a local save exists (Pages + explicit offline)
   const saved = getOfflineCharacter();
   if (cont) cont.classList.toggle("hidden", !saved);
+  if (typeof syncMuteButtonLabels === "function") syncMuteButtonLabels();
 }
 
 document.getElementById("lang-btn")!.onclick = () => {
@@ -705,17 +706,17 @@ async function enterGame(): Promise<void> {
   unlockAudio();
   document.getElementById("title-screen")!.classList.add("hidden");
   document.getElementById("hud")!.classList.remove("hidden");
-  // Chat is noisy on mobile; keep available on desktop only
-  if (!player.touchMode) {
-    document.getElementById("chat-box")!.classList.remove("hidden");
-  }
+  // Solo offline: no multiplayer chat channel
+  document.getElementById("chat-box")!.classList.add("hidden");
   document.getElementById("mode-bar")!.classList.remove("hidden");
   document.getElementById("crosshair")!.classList.toggle("hidden", player.touchMode);
+  syncMuteButtonLabels();
 
   const townId = character.position.townId || "rimeport";
   const savedDungeon = character.position.dungeonId;
   const mapNode = character.position.mapNodeId || townId;
   travelDay = character.travelDay ?? 1;
+  const savedInterior = String(character.questFlags.__interior || "");
 
   if (savedDungeon && DUNGEONS[savedDungeon]) {
     dungeonId = savedDungeon;
@@ -726,13 +727,35 @@ async function enterGame(): Promise<void> {
       rooms[0]?.id ||
       null;
     mode = "dungeon";
-    if (roomId) world.loadDungeonRoom(savedDungeon, roomId);
+    if (roomId) {
+      world.loadDungeonRoom(savedDungeon, roomId);
+      if (character.questFlags[`${savedDungeon}:${roomId}:enc_clear`]) {
+        world.interactables = world.interactables.filter((i) => i.kind !== "encounter");
+      }
+      world.interactables = world.interactables.filter((i) => {
+        if (i.kind === "door" || i.kind === "exit") return true;
+        return !character!.questFlags[`${savedDungeon}:feature:${i.id}`];
+      });
+    }
     startAmbient("dungeon");
   } else if (NODE_BY_ID[mapNode] && NODE_BY_ID[mapNode].kind !== "town") {
     mode = "explore";
     dungeonId = null;
     roomId = null;
     world.loadWilderness(mapNode, NODE_BY_ID[mapNode].danger);
+    startAmbient("town");
+  } else if (savedInterior) {
+    // Resume walkable building interior from autosave
+    mode = "explore";
+    dungeonId = null;
+    roomId = null;
+    world.interiorReturnTownId = townId;
+    const town = TOWNS[townId];
+    const building = town?.buildings.find(
+      (b) => b.id === savedInterior || b.interact === savedInterior
+    );
+    const kind = interiorKindForBuilding(building?.id || savedInterior, building?.interact);
+    world.loadInterior(kind, building?.id || savedInterior);
     startAmbient("town");
   } else {
     mode = "explore";
@@ -830,6 +853,7 @@ function renderModeBar(): void {
     ["inventory", t("ui.inventory"), showInventory],
     ["shop", t("ui.shop") || "Shop", () => void showShop()],
     ["quest", t("ui.quests") || "Quests", showQuestPanel],
+    ["help", t("ui.help") || "Help", showHelp],
   ];
   bar.innerHTML = buttons.map(([, label]) => `<button class="btn">${label}</button>`).join("");
   bar.querySelectorAll("button").forEach((b, i) => {
@@ -837,16 +861,42 @@ function renderModeBar(): void {
   });
 }
 
+function showHelp(): void {
+  const de = getLocale() === "de";
+  showPanel(
+    `<h2>${t("ui.help") || "How to play"}</h2>
+    <div style="font-size:0.9rem;line-height:1.45;color:#c4b49a">
+      <p><strong>${de ? "Bewegung" : "Move"}</strong> — WASD · ${de ? "Mausblick (Klick auf Canvas)" : "mouse look (click canvas)"} · ${de ? "E / Taste Interagieren" : "E / Interact button"}</p>
+      <p><strong>${de ? "Städte" : "Towns"}</strong> — ${de ? "Türen öffnen, NPCs ansprechen, Läden, Tempel, Tafel." : "Open doors, talk to NPCs, shops, temple, quest board."}</p>
+      <p><strong>${de ? "Reise" : "Travel"}</strong> — ${de ? "Jeder Wegabschnitt = 1 Tag, Rationen, Wetter, mögliche Kämpfe. Städte über die Reisekarte wählen." : "Each road leg = 1 day, rations, weather, possible fights. Pick cities on the travel map."}</p>
+      <p><strong>${de ? "Kampf" : "Combat"}</strong> — ${de ? "Zuerst bewegen (max. 3 Felder), dann angreifen wenn angrenzend. Tränke / Verteidigen / Flucht." : "Move first (max 3 tiles), then attack when adjacent. Potions / Defend / Flee."}</p>
+      <p><strong>${de ? "Quests" : "Quests"}</strong> — ${de ? "Bundsglut & Fuchsmarke plus Nebenaufträge. Fortschritt im Journal und unter Quests." : "Pact Cinder & Foxbrand plus side jobs. Track progress in Journal and Quests."}</p>
+      <p><strong>${de ? "Speichern" : "Save"}</strong> — ${de ? "Automatisch im Browser (localStorage). Continue auf dem Titelbild." : "Autosave in the browser (localStorage). Use Continue on the title screen."}</p>
+      <p style="margin-top:8px;opacity:0.85">${de ? "Escape schließt Panels. Mute oben rechts." : "Escape closes panels. Mute is top-right."}</p>
+    </div>`
+  );
+}
+
 function closePanel(): void {
   const p = document.getElementById("center-panel")!;
   p.classList.add("hidden");
   p.innerHTML = "";
-  player.enabled = true;
+  player.enabled = mode !== "combat";
   // keep dialogue cleared when dismissing casually
   if (dialogue && mode !== "combat") {
     dialogue = null;
   }
 }
+
+// Escape always closes modal panels
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const p = document.getElementById("center-panel");
+  if (p && !p.classList.contains("hidden")) {
+    e.preventDefault();
+    closePanel();
+  }
+});
 
 function showPanel(html: string, opts?: { keepDisabled?: boolean }): void {
   const p = document.getElementById("center-panel")!;
@@ -1058,7 +1108,7 @@ async function doCamp(): Promise<void> {
       character = data.character;
       updateHud();
       notify(t("ui.camp") + " — +" + t("ui.life"));
-      document.getElementById("center-panel")!.classList.add("hidden");
+      closePanel();
     } catch {
       notify(t("travel.starving"), "warn");
     }
@@ -1286,7 +1336,7 @@ async function turnInQuest(questId: string, choice?: string): Promise<void> {
         }
       }
     }
-    document.getElementById("center-panel")!.classList.add("hidden");
+    closePanel();
   } catch (e: any) {
     notify(String(e.message || e), "warn");
   }
@@ -1334,11 +1384,11 @@ async function openQuestBoard(): Promise<void> {
   if (take) {
     take.onclick = async () => {
       await progressQuest("wolves", "board_notice");
-      document.getElementById("center-panel")!.classList.add("hidden");
+      closePanel();
     };
   }
   const close = document.getElementById("qb-close");
-  if (close) close.onclick = () => document.getElementById("center-panel")!.classList.add("hidden");
+  if (close) close.onclick = () => closePanel();
 }
 
 function currentMapNodeId(): string {
@@ -1355,7 +1405,7 @@ function syncTravelDayFromChar(): void {
 }
 
 /**
- * Schicksalsklinge-style overland map:
+ * Classic overland map:
  * pick a destination town/dungeon; march one road-leg per day with weather & events.
  */
 function showTravel(): void {
@@ -1419,7 +1469,7 @@ function showTravel(): void {
         .join("")}
     </div>
     <h3 style="margin-top:12px">${t("travel.cities") || "Journey to a city"}</h3>
-    <p style="font-size:0.8rem;color:#b8a88a">${t("travel.cities_hint") || "Like Schicksalsklinge: each road segment costs a day, rations, and may bring weather or wolves."}</p>
+    <p style="font-size:0.8rem;color:#b8a88a">${t("travel.cities_hint") || "Each road segment costs a day, rations, and may bring weather or wolves."}</p>
     <div style="display:flex;flex-direction:column;gap:6px">
       ${towns
         .filter((id) => id !== fromId)
@@ -1554,7 +1604,7 @@ function arriveAtNode(nodeId: string): void {
   (window as any).__embertrailSyncMobile?.();
 }
 
-/** One day of march (one graph edge) — Schicksalsklinge road leg */
+/** One day of march (one graph edge) */
 async function marchOneLeg(from: string, to: string): Promise<void> {
   if (!character) return;
   if (actionBusy) return;
@@ -2194,9 +2244,7 @@ function showDialogue(): void {
         const town = TOWNS[character?.position.townId || "rimeport"];
         const npc = town?.npcs.find((n) => n.id === dialogue!.npcId);
         if (topic === "farewell") {
-          document.getElementById("center-panel")!.classList.add("hidden");
-          player.enabled = true;
-          dialogue = null;
+          closePanel();
           return;
         }
         const key = npc?.replies[topic] ?? npc?.greetingKey ?? dialogue!.textKey;
@@ -2217,9 +2265,7 @@ function showDialogue(): void {
         }
       }
       if (topic === "farewell") {
-        document.getElementById("center-panel")!.classList.add("hidden");
-        player.enabled = true;
-        dialogue = null;
+        closePanel();
       }
     };
   });
@@ -2352,6 +2398,12 @@ function openBuilding(interactId: string): void {
   const rest = document.getElementById("b-rest");
   if (rest)
     rest.onclick = async () => {
+      // Prefer paid temple/inn heal service (no rations); fall back to camp
+      const healed = await tryPaidHeal(townId);
+      if (healed) {
+        closePanel();
+        return;
+      }
       try {
         const data = await api("/api/camp", {
           method: "POST",
@@ -2366,15 +2418,46 @@ function openBuilding(interactId: string): void {
             : "You rest and recover.",
           "loot"
         );
-        document.getElementById("center-panel")!.classList.add("hidden");
+        closePanel();
       } catch {
         notify(t("travel.starving") || "Need rations to rest.", "warn");
       }
     };
-  document.getElementById("b-leave")!.onclick = () => {
-    document.getElementById("center-panel")!.classList.add("hidden");
-    player.enabled = true;
-  };
+  document.getElementById("b-leave")!.onclick = () => closePanel();
+}
+
+/** Buy first heal service in this town if any shop offers one */
+async function tryPaidHeal(townId: string): Promise<boolean> {
+  if (!character) return false;
+  const shops = SHOPS[townId] || [];
+  for (const shop of shops) {
+    const svc = shop.services?.find((s) => s.kind === "heal");
+    if (!svc) continue;
+    try {
+      const data = await api("/api/shop/buy", {
+        method: "POST",
+        body: JSON.stringify({
+          characterId: character.id,
+          townId,
+          shopId: shop.id,
+          itemId: svc.id,
+          qty: 1,
+        }),
+      });
+      character = data.character;
+      updateHud();
+      playSfx("cast");
+      notify(t("notify.healed") || "You feel better.", "loot");
+      return true;
+    } catch (e: any) {
+      const msg = String(e.message || e);
+      if (msg.includes("not_enough_coin")) {
+        notify(t("notify.not_enough_coin") || "Not enough coin.", "warn");
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 async function tryInteract(): Promise<void> {
@@ -2459,6 +2542,12 @@ async function tryInteract(): Promise<void> {
     const restBtn = document.getElementById("is-rest");
     if (restBtn)
       restBtn.onclick = async () => {
+        const townId = character!.position.townId || "rimeport";
+        const healed = await tryPaidHeal(townId);
+        if (healed) {
+          closePanel();
+          return;
+        }
         try {
           const data = await api("/api/camp", {
             method: "POST",
@@ -2468,15 +2557,12 @@ async function tryInteract(): Promise<void> {
           updateHud();
           playSfx("cast");
           notify(getLocale() === "de" ? "Ausgeruht." : "Rested.", "loot");
-          document.getElementById("center-panel")!.classList.add("hidden");
+          closePanel();
         } catch {
           notify(t("travel.starving") || "Need rations.", "warn");
         }
       };
-    document.getElementById("is-close")!.onclick = () => {
-      document.getElementById("center-panel")!.classList.add("hidden");
-      player.enabled = true;
-    };
+    document.getElementById("is-close")!.onclick = () => closePanel();
     return;
   }
 
@@ -2722,18 +2808,52 @@ document.getElementById("btn-create")!.onclick = async () => {
   renderCreate();
 };
 
-// Mute toggle
+// Mute toggle (title + in-game)
+function syncMuteButtonLabels(): void {
+  const label = isMuted()
+    ? getLocale() === "de"
+      ? "Ton an"
+      : "Unmute"
+    : getLocale() === "de"
+      ? "Stumm"
+      : "Mute";
+  const titleMute = document.getElementById("mute-btn");
+  const hudMuteBtn = document.getElementById("hud-mute-btn");
+  if (titleMute) titleMute.textContent = label;
+  if (hudMuteBtn) hudMuteBtn.textContent = label;
+}
+
 const muteBtn = document.createElement("button");
 muteBtn.className = "btn lang-toggle";
 muteBtn.style.top = "48px";
 muteBtn.id = "mute-btn";
-muteBtn.textContent = isMuted() ? "Unmute" : "Mute";
 document.getElementById("title-screen")!.appendChild(muteBtn);
 muteBtn.onclick = () => {
   setMuted(!isMuted());
-  muteBtn.textContent = isMuted() ? "Unmute" : "Mute";
+  syncMuteButtonLabels();
   playSfx("ui_click");
 };
+
+const hudMute = document.createElement("button");
+hudMute.className = "btn hidden";
+hudMute.id = "hud-mute-btn";
+hudMute.style.cssText =
+  "position:fixed;top:10px;right:10px;z-index:20;font-size:0.75rem;padding:4px 8px;opacity:0.9";
+document.body.appendChild(hudMute);
+hudMute.onclick = () => {
+  setMuted(!isMuted());
+  syncMuteButtonLabels();
+  playSfx("ui_click");
+};
+const modeBarEl = document.getElementById("mode-bar");
+if (modeBarEl) {
+  const obs = new MutationObserver(() => {
+    const playing = !modeBarEl.classList.contains("hidden");
+    hudMute.classList.toggle("hidden", !playing);
+  });
+  obs.observe(modeBarEl, { attributes: true, attributeFilter: ["class"] });
+}
+syncMuteButtonLabels();
 
 // Move sync
 let moveAcc = 0;
@@ -2820,7 +2940,8 @@ setInterval(() => {
   }
 }, 1000);
 
-// Solo autosave every 4s while playing
+// Solo autosave every 4s while playing (dirty position only)
+let lastSaveKey = "";
 setInterval(() => {
   if (!OFFLINE || !character) return;
   if (mode !== "explore" && mode !== "dungeon") return;
@@ -2832,13 +2953,28 @@ setInterval(() => {
     yaw: player.yaw,
     townId: character.position.townId,
     dungeonId: character.position.dungeonId,
+    roomId: character.position.roomId ?? roomId ?? undefined,
+    mapNodeId: character.position.mapNodeId,
   };
+  const key = `${character.position.x.toFixed(1)},${character.position.z.toFixed(1)},${character.position.dungeonId},${character.position.roomId},${character.life},${character.inventory.length}`;
+  if (key === lastSaveKey) return;
+  lastSaveKey = key;
   try {
     saveOfflineCharacter(character);
   } catch {
     /* quota */
   }
 }, 4000);
+
+window.addEventListener("beforeunload", () => {
+  if (OFFLINE && character) {
+    try {
+      saveOfflineCharacter(character);
+    } catch {
+      /* ok */
+    }
+  }
+});
 
 refreshI18nChrome();
 document.getElementById("crosshair")!.classList.add("hidden");

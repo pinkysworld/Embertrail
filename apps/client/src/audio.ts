@@ -8,7 +8,12 @@ let master: GainNode | null = null;
 let ambientGain: GainNode | null = null;
 let ambientNodes: AudioNode[] = [];
 let muted = localStorage.getItem("embertrail_mute") === "1";
-let volume = Number(localStorage.getItem("embertrail_vol") ?? "0.35");
+function readVolume(): number {
+  const v = Number(localStorage.getItem("embertrail_vol") ?? "0.35");
+  if (!Number.isFinite(v)) return 0.35;
+  return Math.max(0, Math.min(1, v));
+}
+let volume = readVolume();
 
 function ensure(): AudioContext | null {
   if (typeof window === "undefined") return null;

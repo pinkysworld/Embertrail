@@ -305,6 +305,22 @@ export function applyTravelToCharacter(
     }
   }
 
+  // Weapon / gear wear on equipped main hand (default durability 100)
+  if (leg.weaponWear > 0 && next.equipped.mainHand) {
+    const weapon = next.inventory.find((i) => i.itemId === next.equipped.mainHand);
+    if (weapon) {
+      const before = weapon.durability ?? 100;
+      weapon.durability = Math.max(0, before - leg.weaponWear);
+      if (weapon.durability === 0) {
+        notes.push("travel.weapon_ruined");
+        next.inventory = next.inventory.filter((i) => i !== weapon);
+        next.equipped = { ...next.equipped, mainHand: undefined };
+      } else if (leg.weaponWear >= 2) {
+        notes.push("travel.weapon_wear");
+      }
+    }
+  }
+
   if (leg.disease && !next.diseases.includes(leg.disease)) {
     next.diseases.push(leg.disease);
   }

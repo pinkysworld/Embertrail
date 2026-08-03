@@ -145,7 +145,7 @@ export interface CharacterSheet {
     z: number;
     yaw: number;
   };
-  /** Campaign day counter (Schicksalsklinge-style calendar) */
+  /** Campaign day counter for overland marches */
   travelDay?: number;
   questFlags: Record<string, number | boolean | string>;
   journal: JournalEntry[];

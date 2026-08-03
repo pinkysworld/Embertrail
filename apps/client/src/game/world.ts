@@ -86,7 +86,7 @@ export class WorldScene {
    * Affects sky, fog, hemisphere/directional lights, window glow, and lanterns.
    */
   /**
-   * Overland camp / road scene (Schicksalsklinge-style: between towns).
+   * Overland camp / road scene (between towns).
    * kind: wild | crossroads | dungeon approach flavor
    */
   loadWilderness(nodeId: string, danger = 1): void {

@@ -220,13 +220,17 @@ export function expForKill(enemyLevel: number, partySize: number): number {
 export function applyLevelUp(sheet: CharacterSheet): CharacterSheet {
   if (sheet.exp < sheet.expToNext) return sheet;
   const next = { ...sheet };
-  next.level += 1;
-  next.exp -= next.expToNext;
-  next.expToNext = 100 + next.level * 50;
   const def = ARCHETYPE_BY_ID[next.archetype];
-  next.lifeMax = computeLifeMax(next.attributes, next.level, def.lifeMod);
+  // Support multi-level from large EXP grants
+  let guard = 0;
+  while (next.exp >= next.expToNext && guard++ < 50) {
+    next.level += 1;
+    next.exp -= next.expToNext;
+    next.expToNext = 100 + next.level * 50;
+    next.lifeMax = computeLifeMax(next.attributes, next.level, def.lifeMod);
+    next.focusMax = computeFocusMax(next.attributes, next.level, def.focusMod);
+  }
   next.life = next.lifeMax;
-  next.focusMax = computeFocusMax(next.attributes, next.level, def.focusMod);
   next.focus = next.focusMax;
   return next;
 }

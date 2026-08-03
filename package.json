@@ -2,14 +2,17 @@
   "name": "embertrail",
   "version": "0.1.0",
   "private": true,
-  "description": "Embertrail / Glutpfad \u2014 browser MMO-lite party CRPG",
+  "description": "Embertrail / Glutpfad — solo offline browser CRPG (Cinderreach)",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w @embertrail/server\" \"npm run dev -w @embertrail/client\"",
-    "build": "npm run build -w @embertrail/shared && npm run build -w @embertrail/rules && npm run build -w @embertrail/content && npm run build -w @embertrail/server && npm run build -w @embertrail/client",
+    "dev": "npm run dev -w @embertrail/client",
+    "dev:full": "concurrently -n server,client -c blue,green \"npm run dev -w @embertrail/server\" \"npm run dev -w @embertrail/client\"",
+    "build": "npm run build -w @embertrail/shared && npm run build -w @embertrail/rules && npm run build -w @embertrail/content && npm run build -w @embertrail/client",
+    "build:all": "npm run build -w @embertrail/shared && npm run build -w @embertrail/rules && npm run build -w @embertrail/content && npm run build -w @embertrail/server && npm run build -w @embertrail/client",
+    "build:pages": "GITHUB_PAGES=true npm run build -w @embertrail/client",
     "test": "npm run test -w @embertrail/rules"
   },
   "devDependencies": {
