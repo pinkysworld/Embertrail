@@ -2083,9 +2083,18 @@ function showDialogue(): void {
   player.enabled = false;
   document.exitPointerLock();
   const portrait = npcPortraitUrl(dialogue.npcId);
+  // Resolve display name from town NPC table
+  let title = t("ui.talk");
+  for (const town of Object.values(TOWNS)) {
+    const n = town.npcs.find((x) => x.id === dialogue!.npcId);
+    if (n) {
+      title = t(n.nameKey) || n.id;
+      break;
+    }
+  }
   showPanel(
-    `<h2>${t("ui.talk")}</h2>
-    <img class="npc-portrait" src="${portrait}" alt="" onerror="this.style.display='none'" />
+    `<h2>${title}</h2>
+    <img class="npc-portrait" src="${portrait}" alt="" onerror="this.onerror=null;this.src='${BASE}portraits/npc_merchant.png'" />
     <p>${t(dialogue.textKey)}</p>
     <div class="topic-list" style="clear:both">
       ${dialogue.topics

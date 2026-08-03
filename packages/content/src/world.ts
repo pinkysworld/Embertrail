@@ -6,7 +6,20 @@ export interface NpcDef {
   replies: Record<string, string>;
   x: number;
   z: number;
-  kind: "priest" | "envoy" | "merchant" | "innkeep" | "smith" | "guard";
+  kind:
+    | "priest"
+    | "envoy"
+    | "merchant"
+    | "innkeep"
+    | "smith"
+    | "guard"
+    | "bowyer"
+    | "fisher"
+    | "scout"
+    | "refugee"
+    | "beggar"
+    | "miner"
+    | "herbalist";
 }
 
 export interface BuildingDef {
@@ -114,13 +127,79 @@ export const TOWNS: Record<string, TownDef> = {
         id: "npc_smith",
         nameKey: "npc.smith.name",
         greetingKey: "npc.smith.greeting",
-        topics: ["foxbrand", "farewell"],
+        topics: ["foxbrand", "rumors", "farewell"],
         replies: {
           foxbrand: "dlg.smith.foxbrand",
+          rumors: "dlg.smith.rumors",
         },
         x: 10,
         z: 7,
         kind: "smith",
+      },
+      {
+        id: "npc_guard_gate",
+        nameKey: "npc.guard_gate.name",
+        greetingKey: "npc.guard_gate.greeting",
+        topics: ["war", "roads", "farewell"],
+        replies: {
+          war: "dlg.guard_gate.war",
+          roads: "dlg.guard_gate.roads",
+        },
+        x: -3,
+        z: 15,
+        kind: "guard",
+      },
+      {
+        id: "npc_guard_square",
+        nameKey: "npc.guard_square.name",
+        greetingKey: "npc.guard_square.greeting",
+        topics: ["rumors", "roads", "farewell"],
+        replies: {
+          rumors: "dlg.guard_square.rumors",
+          roads: "dlg.guard_square.roads",
+        },
+        x: 2,
+        z: 3,
+        kind: "guard",
+      },
+      {
+        id: "npc_fisher",
+        nameKey: "npc.fisher.name",
+        greetingKey: "npc.fisher.greeting",
+        topics: ["harbor", "rumors", "farewell"],
+        replies: {
+          harbor: "dlg.fisher.harbor",
+          rumors: "dlg.fisher.rumors",
+        },
+        x: -5,
+        z: 18,
+        kind: "fisher",
+      },
+      {
+        id: "npc_refugee",
+        nameKey: "npc.refugee.name",
+        greetingKey: "npc.refugee.greeting",
+        topics: ["war", "mirehold", "farewell"],
+        replies: {
+          war: "dlg.refugee.war",
+          mirehold: "dlg.refugee.mirehold",
+        },
+        x: -12,
+        z: -2,
+        kind: "refugee",
+      },
+      {
+        id: "npc_beggar",
+        nameKey: "npc.beggar.name",
+        greetingKey: "npc.beggar.greeting",
+        topics: ["rumors", "pactcinder", "farewell"],
+        replies: {
+          rumors: "dlg.beggar.rumors",
+          pactcinder: "dlg.beggar.pactcinder",
+        },
+        x: 6,
+        z: 8,
+        kind: "beggar",
       },
     ],
   },
@@ -131,22 +210,73 @@ export const TOWNS: Record<string, TownDef> = {
     ground: "grass",
     buildings: [
       { id: "grove_hall", labelKey: "place.oakspire", x: 0, z: -8, w: 10, d: 8, h: 7, texture: "bark", interact: "npc_leaf_elder" },
-      { id: "bowyer", labelKey: "skill.bows", x: 8, z: 2, w: 5, d: 4, h: 3.5, texture: "timber" },
+      { id: "bowyer", labelKey: "npc.bowyer.name", x: 8, z: 2, w: 5, d: 4, h: 3.5, texture: "timber", interact: "npc_bowyer" },
+      { id: "herb_hut", labelKey: "npc.herbalist.name", x: -8, z: 2, w: 4, d: 4, h: 3, texture: "bark", interact: "npc_herbalist" },
       { id: "gate", labelKey: "ui.travel", x: 0, z: 12, w: 8, d: 2, h: 4, texture: "bark", interact: "travel" },
     ],
     npcs: [
       {
         id: "npc_leaf_elder",
-        nameKey: "npc.envoy.name",
-        greetingKey: "npc.envoy.greeting",
-        topics: ["pactcinder", "war", "farewell"],
+        nameKey: "npc.leaf_elder.name",
+        greetingKey: "npc.leaf_elder.greeting",
+        topics: ["pactcinder", "war", "herbs", "farewell"],
         replies: {
-          pactcinder: "dlg.envoy.pactcinder",
-          war: "dlg.envoy.war",
+          pactcinder: "dlg.leaf_elder.pactcinder",
+          war: "dlg.leaf_elder.war",
+          herbs: "dlg.leaf_elder.herbs",
         },
         x: 0,
         z: -6,
         kind: "envoy",
+      },
+      {
+        id: "npc_bowyer",
+        nameKey: "npc.bowyer.name",
+        greetingKey: "npc.bowyer.greeting",
+        topics: ["roads", "war", "farewell"],
+        replies: {
+          roads: "dlg.bowyer.roads",
+          war: "dlg.bowyer.war",
+        },
+        x: 8,
+        z: 3,
+        kind: "bowyer",
+      },
+      {
+        id: "npc_herbalist",
+        nameKey: "npc.herbalist.name",
+        greetingKey: "npc.herbalist.greeting",
+        topics: ["herbs", "rumors", "farewell"],
+        replies: {
+          herbs: "dlg.herbalist.herbs",
+          rumors: "dlg.herbalist.rumors",
+        },
+        x: -8,
+        z: 3,
+        kind: "herbalist",
+      },
+      {
+        id: "npc_oak_scout",
+        nameKey: "npc.oak_scout.name",
+        greetingKey: "npc.oak_scout.greeting",
+        topics: ["roads", "war", "farewell"],
+        replies: {
+          roads: "dlg.oak_scout.roads",
+          war: "dlg.oak_scout.war",
+        },
+        x: 3,
+        z: 10,
+        kind: "scout",
+      },
+      {
+        id: "npc_oak_guard",
+        nameKey: "npc.oak_guard.name",
+        greetingKey: "npc.oak_guard.greeting",
+        topics: ["temple", "farewell"],
+        replies: { temple: "dlg.oak_guard.grove" },
+        x: -3,
+        z: 11,
+        kind: "guard",
       },
     ],
   },
@@ -157,20 +287,62 @@ export const TOWNS: Record<string, TownDef> = {
     ground: "mud",
     buildings: [
       { id: "barricade", labelKey: "place.mirehold", x: 0, z: -6, w: 12, d: 3, h: 4, texture: "timber" },
-      { id: "black_market", labelKey: "npc.merchant.name", x: -6, z: 2, w: 5, d: 4, h: 3, texture: "stone", interact: "npc_mirehold_buyer" },
+      { id: "black_market", labelKey: "npc.mirehold_buyer.name", x: -6, z: 2, w: 5, d: 4, h: 3, texture: "stone", interact: "npc_mirehold_buyer" },
       { id: "cellar_door", labelKey: "place.cult_cellars", x: 8, z: 4, w: 3, d: 3, h: 2, texture: "cult", interact: "dungeon_cult" },
       { id: "gate", labelKey: "ui.travel", x: 0, z: 12, w: 8, d: 2, h: 4, texture: "stone", interact: "travel" },
     ],
     npcs: [
       {
         id: "npc_mirehold_buyer",
-        nameKey: "npc.merchant.name",
-        greetingKey: "npc.merchant.greeting",
-        topics: ["pactcinder", "farewell"],
-        replies: { pactcinder: "dlg.merchant.pactcinder" },
+        nameKey: "npc.mirehold_buyer.name",
+        greetingKey: "npc.mirehold_buyer.greeting",
+        topics: ["pactcinder", "war", "farewell"],
+        replies: {
+          pactcinder: "dlg.mirehold_buyer.pactcinder",
+          war: "dlg.mirehold_buyer.war",
+        },
         x: -6,
         z: 3,
         kind: "merchant",
+      },
+      {
+        id: "npc_mire_captain",
+        nameKey: "npc.mire_captain.name",
+        greetingKey: "npc.mire_captain.greeting",
+        topics: ["war", "roads", "farewell"],
+        replies: {
+          war: "dlg.mire_captain.war",
+          roads: "dlg.mire_captain.roads",
+        },
+        x: 2,
+        z: -4,
+        kind: "guard",
+      },
+      {
+        id: "npc_mire_refugee",
+        nameKey: "npc.mire_refugee.name",
+        greetingKey: "npc.mire_refugee.greeting",
+        topics: ["war", "rumors", "farewell"],
+        replies: {
+          war: "dlg.mire_refugee.war",
+          rumors: "dlg.mire_refugee.rumors",
+        },
+        x: -4,
+        z: 8,
+        kind: "refugee",
+      },
+      {
+        id: "npc_mire_scout",
+        nameKey: "npc.mire_scout.name",
+        greetingKey: "npc.mire_scout.greeting",
+        topics: ["cult", "roads", "farewell"],
+        replies: {
+          cult: "dlg.mire_scout.cult",
+          roads: "dlg.mire_scout.roads",
+        },
+        x: 7,
+        z: 5,
+        kind: "scout",
       },
     ],
   },
@@ -187,12 +359,51 @@ export const TOWNS: Record<string, TownDef> = {
     npcs: [
       {
         id: "npc_deep_envoy",
-        nameKey: "npc.smith.name",
-        greetingKey: "npc.smith.greeting",
-        topics: ["pactcinder", "farewell"],
-        replies: { pactcinder: "dlg.envoy.pactcinder" },
+        nameKey: "npc.deep_envoy.name",
+        greetingKey: "npc.deep_envoy.greeting",
+        topics: ["pactcinder", "war", "farewell"],
+        replies: {
+          pactcinder: "dlg.deep_envoy.pactcinder",
+          war: "dlg.deep_envoy.war",
+        },
         x: 0,
         z: -6,
+        kind: "smith",
+      },
+      {
+        id: "npc_deep_miner",
+        nameKey: "npc.deep_miner.name",
+        greetingKey: "npc.deep_miner.greeting",
+        topics: ["mine", "rumors", "farewell"],
+        replies: {
+          mine: "dlg.deep_miner.mine",
+          rumors: "dlg.deep_miner.rumors",
+        },
+        x: -6,
+        z: 2,
+        kind: "miner",
+      },
+      {
+        id: "npc_deep_guard",
+        nameKey: "npc.deep_guard.name",
+        greetingKey: "npc.deep_guard.greeting",
+        topics: ["roads", "farewell"],
+        replies: { roads: "dlg.deep_guard.roads" },
+        x: 2,
+        z: 11,
+        kind: "guard",
+      },
+      {
+        id: "npc_deep_smith",
+        nameKey: "npc.deep_smith.name",
+        greetingKey: "npc.deep_smith.greeting",
+        topics: ["foxbrand", "rumors", "farewell"],
+        replies: {
+          foxbrand: "dlg.deep_smith.foxbrand",
+          rumors: "dlg.deep_smith.rumors",
+        },
+        x: 5,
+        z: -4,
         kind: "smith",
       },
     ],

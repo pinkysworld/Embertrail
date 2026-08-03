@@ -532,13 +532,14 @@ export class WorldScene {
         radius: 2.8,
         kind: "npc",
       });
-      // Quest pin above key story NPCs / dungeon doors
+      // Quest pin above story-critical NPCs
       if (
         npc.kind === "priest" ||
         npc.kind === "envoy" ||
         npc.kind === "smith" ||
         npc.id.includes("leaf") ||
-        npc.id.includes("deep")
+        npc.id.includes("deep_envoy") ||
+        npc.id.includes("buyer")
       ) {
         this.addQuestMarker(npc.x, npc.z, 2.6);
       }
