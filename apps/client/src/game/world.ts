@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { TOWNS, DUNGEONS, type TownDef, type DungeonRoomDef } from "@embertrail/content";
-import { getMaterial, getMaterialTiled } from "./materials";
+import { getMaterial, getMaterialTiled, disposeOwnedMaterial } from "./materials";
 import { createEnemyMesh, createNpcMesh } from "./characterMesh";
 
 export interface Interactable {
@@ -62,12 +62,14 @@ export class WorldScene {
         const mesh = c as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();
         // Dispose only local (non-cached) materials, once each
-        if (mesh.userData?.disposeMat && mesh.material) {
+        if (mesh.material) {
           const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
           for (const m of mats) {
-            if (!disposedMats.has(m)) {
+            if (disposedMats.has(m)) continue;
+            const owned = mesh.userData?.disposeMat || (m as THREE.Material).userData?.ownedClone;
+            if (owned) {
               disposedMats.add(m);
-              m.dispose();
+              disposeOwnedMaterial(m);
             }
           }
         }

@@ -359,17 +359,56 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
     const seed = Date.now() ^ body.combatId.length * 1000;
-    let action = body.action as { kind?: string; itemId?: string };
-    // Consume potions from inventory before applying combat item action
+    const action = body.action as { kind?: string; itemId?: string };
+    // Weapon map: foxbrand counts as equipped main hand when present
+    const weaponId =
+      sheet.equipped.mainHand === "foxbrand_axe" || sheet.equipped.mainHand
+        ? sheet.equipped.mainHand
+        : sheet.inventory.some((i) => i.itemId === "foxbrand_axe")
+          ? "foxbrand_axe"
+          : sheet.equipped.mainHand;
+
+    // Pre-check inventory for items, but only consume AFTER successful combat apply
     if (action.kind === "item" && action.itemId) {
-      const inv = removeItem(sheet.inventory, action.itemId, 1);
-      if (!inv) throw new Error("no_item");
-      sheet.inventory = inv;
-      saveChar(sheet);
+      const has = sheet.inventory.some((i) => i.itemId === action.itemId && i.qty >= 1);
+      if (!has) throw new Error("no_item");
     }
+
     let result = applyCombatAction(state, body.characterId, body.action, seed, {
-      [body.characterId]: sheet.equipped.mainHand,
+      [body.characterId]: weaponId,
     });
+
+    // Consume potion only if action advanced the turn (not a pure reject)
+    const rejected =
+      result.notifications?.some(
+        (n) =>
+          n === "combat.not_your_turn" ||
+          n === "combat.bad_item" ||
+          n === "combat.no_item" ||
+          n === "combat.actor_dead" ||
+          n === "combat.out_of_melee" ||
+          n === "combat.invalid_tile" ||
+          n === "combat.blocked" ||
+          n === "combat.occupied" ||
+          n === "combat.move_too_far" ||
+          n === "combat.bad_target" ||
+          n === "combat.no_focus" ||
+          n === "combat.no_los"
+      ) ?? false;
+
+    if (action.kind === "item" && action.itemId && !rejected) {
+      // Success path: action applied (heal/focus logged). Consume stack.
+      const inv = removeItem(sheet.inventory, action.itemId, 1);
+      if (inv) {
+        sheet.inventory = inv;
+        saveChar(sheet);
+      }
+    } else if (action.kind === "item" && rejected) {
+      // Do not consume; state unchanged by applyCombatAction for rejects
+      saveCombat(state);
+      return { state, notifications: result.notifications };
+    }
+
     state = result.state;
     let guard = 0;
     while (!result.ended && guard++ < 20) {
@@ -390,15 +429,33 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
       };
       next.exp += result.exp ?? 0;
       next = applyLevelUp(next);
+      // Convert copper_coins loot into purse; other loot to inventory
+      const lootOut: typeof result.loot = [];
       for (const loot of result.loot ?? []) {
-        const existing = next.inventory.find((i) => i.itemId === loot.itemId);
-        if (existing) existing.qty += loot.qty;
-        else next.inventory = [...next.inventory, loot];
+        if (loot.itemId === "copper_coins") {
+          applyWealthCopper(next, wealthCopper(next) + loot.qty);
+          lootOut.push(loot);
+        } else {
+          const existing = next.inventory.find((i) => i.itemId === loot.itemId);
+          if (existing) existing.qty += loot.qty;
+          else next.inventory = [...next.inventory, loot];
+          lootOut.push(loot);
+        }
+      }
+      // Auto-convert any leftover copper_coins stacks in bag
+      const coinStack = next.inventory.find((i) => i.itemId === "copper_coins");
+      if (coinStack) {
+        applyWealthCopper(next, wealthCopper(next) + coinStack.qty);
+        next.inventory = next.inventory.filter((i) => i.itemId !== "copper_coins");
       }
       const me = state.combatants.find((c) => c.id === body.characterId);
       if (me) {
         next.life = me.life;
         next.focus = me.focus;
+      }
+      // Mark cleared encounters for this dungeon room if flagged
+      if (next.position.dungeonId && next.position.roomId) {
+        next.questFlags[`${next.position.dungeonId}:${next.position.roomId}:enc_clear`] = true;
       }
       const foughtWolves = state.combatants.some((c) => c.side === "enemy" && c.enemyType === "wolf");
       if (
@@ -426,7 +483,7 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
         state,
         ended: result.ended,
         character: next,
-        loot: result.loot,
+        loot: lootOut,
         exp: result.exp,
         notifications: result.notifications,
       };
@@ -436,7 +493,15 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
       let next = { ...sheet };
       if (result.ended === "defeat") {
         next.life = Math.max(1, Math.floor(next.lifeMax * 0.3));
-        next.position = { townId: "rimeport", x: -8, y: 1.6, z: -4, yaw: 0 };
+        next.position = {
+          townId: "rimeport",
+          mapNodeId: "rimeport",
+          lastTownId: "rimeport",
+          x: -8,
+          y: 1.6,
+          z: -4,
+          yaw: 0,
+        };
       } else {
         const me = state.combatants.find((c) => c.id === body.characterId);
         if (me) next.life = me.life;
@@ -460,15 +525,20 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
     const room = dungeon.rooms.find((r) => r.id === (body.roomId || dungeon.rooms[0].id)) ?? dungeon.rooms[0];
+    const lastTown =
+      sheet.position.townId || sheet.position.lastTownId || sheet.position.mapNodeId || "rimeport";
     const next = {
       ...sheet,
       position: {
+        ...sheet.position,
         dungeonId: body.dungeonId,
+        roomId: room.id,
+        lastTownId: lastTown,
+        townId: undefined,
         x: 0,
         y: 1.6,
         z: 8,
         yaw: Math.PI,
-        townId: undefined,
       },
       knownMapNodes: [...new Set([...sheet.knownMapNodes, body.dungeonId])],
     };
@@ -482,33 +552,44 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     const feature = room?.features.find((f) => f.id === body.featureId);
     const sheet = loadChar();
     if (!feature || !sheet || sheet.id !== body.characterId) throw new Error("not_found");
+    const claimKey = `${body.dungeonId}:feature:${body.featureId}`;
+    if (sheet.questFlags[claimKey]) {
+      throw new Error("already_claimed");
+    }
     let next: CharacterSheet = {
       ...sheet,
       inventory: [...sheet.inventory],
       questFlags: { ...sheet.questFlags },
+      journal: [...sheet.journal],
     };
     const notifications: string[] = [];
     if (feature.kind === "greed") {
       if (body.choice === "take_all") {
-        next.inventory.push({ itemId: "copper_coins", qty: 50 });
+        applyWealthCopper(next, wealthCopper(next) + 50);
         next.life = Math.max(1, next.life - 5);
         next.questFlags.mine_greed = "all";
       } else {
-        next.inventory.push({ itemId: "copper_coins", qty: 10 });
+        applyWealthCopper(next, wealthCopper(next) + 10);
         next.questFlags.mine_greed = "need";
       }
+      next.questFlags[claimKey] = true;
       notifications.push("notify.item_gained");
     }
     if (feature.kind === "boss" || feature.kind === "chest" || feature.kind === "puzzle") {
       if (feature.kind === "puzzle") {
-        // Simple puzzle: always succeeds for offline playability
         notifications.push("notify.puzzle_ok");
         next.questFlags[`${body.dungeonId}:puzzle:${feature.id}`] = true;
+        next.questFlags[claimKey] = true;
       }
       const loot = String(feature.data?.loot ?? "");
-      if (loot && !next.inventory.some((i) => i.itemId === loot)) {
-        next.inventory.push({ itemId: loot, qty: 1 });
+      if (loot) {
+        if (loot === "copper_coins") {
+          applyWealthCopper(next, wealthCopper(next) + 15);
+        } else if (!next.inventory.some((i) => i.itemId === loot)) {
+          next.inventory.push({ itemId: loot, qty: 1 });
+        }
         notifications.push("notify.item_gained");
+        next.questFlags[claimKey] = true;
         if (loot === "pactcinder") {
           next.questFlags.pactcinder = 2;
           next.journal = [
@@ -523,15 +604,34 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
             },
           ];
         }
-        if (loot === "foxbrand_axe") next.questFlags.foxbrand = 2;
+        if (loot === "foxbrand_axe") {
+          next.questFlags.foxbrand = 2;
+          next.equipped = { ...next.equipped, mainHand: "foxbrand_axe" };
+        }
         if (loot === "cult_sigil") {
-          if (!next.questFlags.cult_sigil) next.questFlags.cult_sigil = 1;
           next.questFlags.cult_sigil = 2;
         }
+      } else if (feature.kind !== "puzzle") {
+        next.questFlags[claimKey] = true;
       }
     }
     saveChar(next);
     return { character: next, notifications, feature };
+  }
+
+  if (path === "/api/dungeon/room" && method === "POST") {
+    const sheet = loadChar();
+    if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
+    const next = {
+      ...sheet,
+      position: {
+        ...sheet.position,
+        dungeonId: body.dungeonId || sheet.position.dungeonId,
+        roomId: String(body.roomId),
+      },
+    };
+    saveChar(next);
+    return { character: next };
   }
 
   if (path === "/api/camp" && method === "POST") {

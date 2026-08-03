@@ -17,6 +17,8 @@ export const WEAPON_STATS: Record<string, WeaponStats> = {
   staff: { dice: 1, sides: 6, bonus: 0, ranged: false, skill: "blunt" },
   shortbow: { dice: 1, sides: 6, bonus: 1, ranged: true, skill: "bows" },
   throwing_knives: { dice: 1, sides: 4, bonus: 1, ranged: true, skill: "throwing" },
+  /** Legendary quest weapon — stronger than battle_axe */
+  foxbrand_axe: { dice: 1, sides: 10, bonus: 3, ranged: false, skill: "axes", atMod: 1 },
 };
 
 export interface ItemDef {
@@ -55,7 +57,7 @@ export const ITEMS: Record<string, ItemDef> = {
   herb_emberroot: { id: "herb_emberroot", nameKey: "item.herb_emberroot", kind: "misc", valueCopper: 25, stackable: true },
   copper_coins: { id: "copper_coins", nameKey: "item.copper_coins", kind: "misc", valueCopper: 1, stackable: true },
   pactcinder: { id: "pactcinder", nameKey: "item.pactcinder", kind: "quest", valueCopper: 0 },
-  foxbrand_axe: { id: "foxbrand_axe", nameKey: "item.foxbrand_axe", kind: "quest", valueCopper: 0 },
+  foxbrand_axe: { id: "foxbrand_axe", nameKey: "item.foxbrand_axe", kind: "weapon", valueCopper: 0 },
   fake_pactcinder: { id: "fake_pactcinder", nameKey: "item.fake_pactcinder", kind: "quest", valueCopper: 0 },
   mine_key: { id: "mine_key", nameKey: "item.mine_key", kind: "quest", valueCopper: 0 },
   cult_sigil: { id: "cult_sigil", nameKey: "item.cult_sigil", kind: "quest", valueCopper: 0 },

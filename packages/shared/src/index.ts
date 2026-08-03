@@ -134,6 +134,10 @@ export interface CharacterSheet {
   position: {
     townId?: string;
     dungeonId?: string;
+    /** Current dungeon room id (solo continue) */
+    roomId?: string;
+    /** Last town before dungeon/overland (exit restore) */
+    lastTownId?: string;
     /** Current map node on the overland graph (town, road, crossroads) */
     mapNodeId?: string;
     x: number;

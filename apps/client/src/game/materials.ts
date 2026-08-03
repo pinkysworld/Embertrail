@@ -195,17 +195,29 @@ export function getMaterial(id: string): THREE.MeshStandardMaterial {
   return mat;
 }
 
-/** Clone material with independent UV repeat (for paths / roofs) */
+/** Clone material with independent UV repeat (for paths / roofs). Caller should dispose via userData.disposeMat. */
 export function getMaterialTiled(id: string, repeatX: number, repeatY = repeatX): THREE.MeshStandardMaterial {
   const base = getMaterial(id);
   const mat = base.clone();
+  mat.userData.ownedClone = true;
   if (base.map) {
     mat.map = base.map.clone();
     mat.map.wrapS = mat.map.wrapT = THREE.RepeatWrapping;
     mat.map.repeat.set(repeatX, repeatY);
     mat.map.needsUpdate = true;
+    mat.userData.ownedMap = true;
   }
   return mat;
+}
+
+/** Dispose a material that was created via getMaterialTiled (not the global cache). */
+export function disposeOwnedMaterial(m: THREE.Material): void {
+  const sm = m as THREE.MeshStandardMaterial;
+  if (sm.userData?.ownedMap && sm.map) {
+    sm.map.dispose();
+    sm.map = null;
+  }
+  m.dispose();
 }
 
 function roughnessFor(id: string): number {

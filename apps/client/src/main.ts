@@ -36,6 +36,29 @@ const OFFLINE = isOfflineMode() || true; // force solo for this release
 const SOLO_ONLY = true;
 const BASE = import.meta.env.BASE_URL;
 
+/** In-flight guard against double-tap races */
+let actionBusy = false;
+let lastInteractAt = 0;
+
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function withBusy<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  if (actionBusy) return undefined;
+  actionBusy = true;
+  try {
+    return await fn();
+  } finally {
+    actionBusy = false;
+  }
+}
+
 /** Wire public UI chrome into CSS vars (respects GitHub Pages base path). */
 (function applyUiChrome(): void {
   const root = document.documentElement.style;
@@ -184,19 +207,22 @@ function setupMobileControls(): void {
   zone.addEventListener("touchend", endStick);
   zone.addEventListener("touchcancel", endStick);
 
-  btnInteract.addEventListener("click", (e) => {
+  const fireInteract = (e: Event) => {
     e.preventDefault();
     e.stopPropagation();
+    const now = Date.now();
+    if (now - lastInteractAt < 350) return; // debounce double-fire (iOS click+touch)
+    lastInteractAt = now;
     playSfx("ui_click");
     player.onInteract?.();
-  });
+  };
+  // Prefer pointerup once; still accept click for accessibility
+  btnInteract.addEventListener("pointerup", fireInteract);
   btnInteract.addEventListener(
-    "touchstart",
+    "touchend",
     (e) => {
       e.preventDefault();
-      e.stopPropagation();
-      playSfx("ui_click");
-      player.onInteract?.();
+      fireInteract(e);
     },
     { passive: false }
   );
@@ -407,7 +433,7 @@ function renderCreate(): void {
         <img src="${portraitUrl}" alt="" width="96" height="96" style="border:2px solid var(--border);border-radius:4px;object-fit:cover;background:#1a1510" onerror="this.style.display='none'" />
         <div style="flex:1">
       <label>${t("create.name")}</label>
-      <input id="cr-name" value="${createState.name}" maxlength="24" />
+      <input id="cr-name" value="${escapeHtml(createState.name)}" maxlength="24" />
       <label>${t("create.gender")}</label>
       <select id="cr-gender">
         <option value="m" ${createState.gender === "m" ? "selected" : ""}>${t("create.gender.m")}</option>
@@ -693,7 +719,12 @@ async function enterGame(): Promise<void> {
 
   if (savedDungeon && DUNGEONS[savedDungeon]) {
     dungeonId = savedDungeon;
-    roomId = DUNGEONS[savedDungeon].rooms[0]?.id ?? null;
+    const savedRoom = character.position.roomId;
+    const rooms = DUNGEONS[savedDungeon].rooms;
+    roomId =
+      (savedRoom && rooms.some((r) => r.id === savedRoom) ? savedRoom : null) ||
+      rooms[0]?.id ||
+      null;
     mode = "dungeon";
     if (roomId) world.loadDungeonRoom(savedDungeon, roomId);
     startAmbient("dungeon");
@@ -774,7 +805,7 @@ function addOther(p: { id: string; name?: string; archetype?: string; x: number;
 function updateHud(): void {
   if (!character) return;
   (document.getElementById("hud-name") as HTMLElement).textContent =
-    `${character.name} · ${t("ui.level")} ${character.level} · ${t(`arch.${character.archetype}`)}`;
+    `${character.name} · ${t("ui.level")} ${character.level} · ${t(`arch.${character.archetype}`)}`; // textContent — XSS-safe
   (document.getElementById("life-bar") as HTMLElement).style.width =
     `${(100 * character.life) / character.lifeMax}%`;
   (document.getElementById("focus-bar") as HTMLElement).style.width = character.focusMax
@@ -806,11 +837,32 @@ function renderModeBar(): void {
   });
 }
 
-function showPanel(html: string): void {
+function closePanel(): void {
+  const p = document.getElementById("center-panel")!;
+  p.classList.add("hidden");
+  p.innerHTML = "";
+  player.enabled = true;
+  // keep dialogue cleared when dismissing casually
+  if (dialogue && mode !== "combat") {
+    dialogue = null;
+  }
+}
+
+function showPanel(html: string, opts?: { keepDisabled?: boolean }): void {
   const p = document.getElementById("center-panel")!;
   p.classList.remove("hidden");
-  p.innerHTML = html + `<div style="margin-top:10px"><button class="btn" id="panel-close">${t("ui.close")}</button></div>`;
-  document.getElementById("panel-close")!.onclick = () => p.classList.add("hidden");
+  if (!opts?.keepDisabled) {
+    player.enabled = false;
+    try {
+      document.exitPointerLock?.();
+    } catch {
+      /* ok */
+    }
+  }
+  p.innerHTML =
+    html +
+    `<div style="margin-top:10px"><button class="btn" id="panel-close">${t("ui.close")}</button></div>`;
+  document.getElementById("panel-close")!.onclick = () => closePanel();
 }
 
 function showJournal(): void {
@@ -1505,9 +1557,12 @@ function arriveAtNode(nodeId: string): void {
 /** One day of march (one graph edge) — Schicksalsklinge road leg */
 async function marchOneLeg(from: string, to: string): Promise<void> {
   if (!character) return;
+  if (actionBusy) return;
   document.getElementById("center-panel")!.classList.add("hidden");
   syncTravelDayFromChar();
+  await withBusy(async () => {
   try {
+    if (!character) return;
     const data = await api("/api/travel", {
       method: "POST",
       body: JSON.stringify({
@@ -1624,6 +1679,7 @@ async function marchOneLeg(from: string, to: string): Promise<void> {
     }
     showTravel();
   }
+  }); // withBusy
 }
 
 function maybeContinueMarch(): void {
@@ -1691,6 +1747,14 @@ async function enterDungeon(id: string): Promise<void> {
   for (const [, m] of otherPlayers) world.scene.remove(m);
   otherPlayers.clear();
   world.loadDungeonRoom(id, roomId!);
+  // Hide claimed features / cleared encounters
+  if (character.questFlags[`${id}:${roomId}:enc_clear`]) {
+    world.interactables = world.interactables.filter((i) => i.kind !== "encounter");
+  }
+  world.interactables = world.interactables.filter((i) => {
+    if (i.kind === "door" || i.kind === "exit") return true;
+    return !character!.questFlags[`${id}:feature:${i.id}`];
+  });
   player.position.set(0, 1.6, 8);
   player.yaw = Math.PI;
   document.getElementById("center-panel")!.classList.add("hidden");
@@ -1735,16 +1799,32 @@ async function leaveDungeonToHub(): Promise<void> {
   roomId = null;
   for (const [, m] of otherPlayers) world.scene.remove(m);
   otherPlayers.clear();
-  const town = character?.position.townId || "rimeport";
-  world.loadTown(town);
-  player.position.set(0, 1.6, 10);
+  const town =
+    character?.position.lastTownId ||
+    character?.position.townId ||
+    character?.position.mapNodeId ||
+    "rimeport";
+  const townId = TOWNS[town] ? town : "rimeport";
+  world.loadTown(townId);
+  const sp = TOWNS[townId]?.spawn;
+  player.position.set(sp?.x ?? 0, 1.6, sp?.z ?? 10);
   mode = "explore";
   startAmbient("town");
   playSfx("door");
   if (character) {
     character.position.dungeonId = undefined;
-    character.position.townId = town;
-    character.position.mapNodeId = town;
+    character.position.roomId = undefined;
+    character.position.townId = townId;
+    character.position.mapNodeId = townId;
+    character.position.x = player.position.x;
+    character.position.z = player.position.z;
+    if (OFFLINE) {
+      try {
+        saveOfflineCharacter(character);
+      } catch {
+        /* ok */
+      }
+    }
   }
   if (!SOLO_ONLY) {
     try {
@@ -1838,7 +1918,7 @@ function renderCombat(): void {
       ${combat.combatants
         .map(
           (c) =>
-            `<div style="color:${c.id === combat!.activeId ? "#b8860b" : c.life <= 0 ? "#666" : "#c4b49a"}">${c.name}: ${c.life}/${c.lifeMax} LE · AT${c.at}/PA${c.pa}${c.life <= 0 ? " ✕" : ""}</div>`
+            `<div style="color:${c.id === combat!.activeId ? "#b8860b" : c.life <= 0 ? "#666" : "#c4b49a"}">${escapeHtml(c.name)}: ${c.life}/${c.lifeMax} LE · AT${c.at}/PA${c.pa}${c.life <= 0 ? " ✕" : ""}</div>`
         )
         .join("")}
     </div>
@@ -1959,6 +2039,7 @@ function renderCombat(): void {
 
 async function combatAction(action: object): Promise<void> {
   if (!character || !combat) return;
+  if (actionBusy) return;
   // Shared dungeon combat
   if (dungeonRoom) {
     const a = action as { kind?: string };
@@ -1966,7 +2047,9 @@ async function combatAction(action: object): Promise<void> {
     dungeonRoom.send("combat_action", { action });
     return;
   }
+  await withBusy(async () => {
   try {
+    if (!character || !combat) return;
     const prevLogLen = combat.log.length;
     const data = await api("/api/combat/action", {
       method: "POST",
@@ -2047,10 +2130,8 @@ async function combatAction(action: object): Promise<void> {
           <p>${getLocale() === "de" ? "Du wachst in Rimeport auf — angeschlagen, aber am Leben. Heile im Tempel, am Lager, oder mit Tränken." : "You wake in Rimeport — battered but alive. Heal at the temple, camp, or use potions."}</p>
           <button class="btn primary" id="defeat-ok">${t("ui.continue") || "Continue"}</button>`
         );
-        document.getElementById("defeat-ok")!.onclick = () => {
-          document.getElementById("center-panel")!.classList.add("hidden");
-          player.enabled = true;
-        };
+        document.getElementById("defeat-ok")!.onclick = () => closePanel();
+        player.enabled = true; // never soft-lock if panel dismissed
         notify(t("combat.defeat"), "warn");
         mode = "explore";
         startAmbient("town");
@@ -2066,6 +2147,7 @@ async function combatAction(action: object): Promise<void> {
   } catch (e: any) {
     notify(String(e.message || e), "warn");
   }
+  }); // withBusy
 }
 
 function npcPortraitUrl(npcId: string): string {
@@ -2297,6 +2379,10 @@ function openBuilding(interactId: string): void {
 
 async function tryInteract(): Promise<void> {
   if (!character || mode === "combat") return;
+  const now = Date.now();
+  if (now - lastInteractAt < 280) return;
+  lastInteractAt = now;
+  if (actionBusy) return;
   const near = world.nearestInteractable(player.position);
   if (!near) {
     notify(
@@ -2445,8 +2531,20 @@ async function tryInteract(): Promise<void> {
     const to = feature?.data?.to as string | undefined;
     if (to) {
       roomId = to;
-      if (character.position) character.position.dungeonId = dungeonId;
+      if (character.position) {
+        character.position.dungeonId = dungeonId;
+        character.position.roomId = to;
+      }
       world.loadDungeonRoom(dungeonId, to);
+      // Skip already-cleared encounters in this room
+      if (character.questFlags[`${dungeonId}:${to}:enc_clear`]) {
+        world.interactables = world.interactables.filter((i) => i.kind !== "encounter");
+      }
+      // Skip claimed features
+      world.interactables = world.interactables.filter((i) => {
+        if (i.kind === "door" || i.kind === "exit") return true;
+        return !character!.questFlags[`${dungeonId}:feature:${i.id}`];
+      });
       player.position.set(0, 1.6, 6);
       if (dungeonRoom) dungeonRoom.send("change_room", { roomId: to });
       playSfx("door");
@@ -2455,9 +2553,21 @@ async function tryInteract(): Promise<void> {
       updateHud();
       if (OFFLINE) {
         try {
+          void api("/api/dungeon/room", {
+            method: "POST",
+            body: JSON.stringify({ characterId: character.id, dungeonId, roomId: to }),
+          });
           saveOfflineCharacter({
             ...character,
-            position: { ...character.position, dungeonId, x: 0, y: 1.6, z: 6, yaw: Math.PI },
+            position: {
+              ...character.position,
+              dungeonId,
+              roomId: to,
+              x: 0,
+              y: 1.6,
+              z: 6,
+              yaw: Math.PI,
+            },
           });
         } catch {
           /* ok */
@@ -2540,7 +2650,15 @@ async function useFeature(featureId: string, choice?: string): Promise<void> {
       }
     }
   } catch (e: any) {
-    notify(String(e.message || e), "warn");
+    const msg = String(e.message || e);
+    if (msg.includes("already_claimed")) {
+      notify(
+        getLocale() === "de" ? "Bereits geplündert." : "Already claimed.",
+        "info"
+      );
+    } else {
+      notify(msg, "warn");
+    }
   }
 }
 
@@ -2564,6 +2682,15 @@ document.getElementById("chat-input")!.addEventListener("keydown", (e) => {
 // Title buttons
 document.getElementById("btn-guest")!.onclick = () => {
   unlockAudio();
+  const existing = getOfflineCharacter();
+  if (existing) {
+    const ok = confirm(
+      getLocale() === "de"
+        ? `Es gibt einen Spielstand (${existing.name}). Neues Abenteuer überschreibt ihn. Fortfahren?`
+        : `A save exists (${existing.name}). New Adventure will overwrite it. Continue?`
+    );
+    if (!ok) return;
+  }
   void ensureGuestAndQuickStart();
 };
 document.getElementById("btn-continue")!.onclick = async () => {

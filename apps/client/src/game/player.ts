@@ -35,7 +35,14 @@ export class PlayerController {
   constructor(private dom: HTMLElement) {
     window.addEventListener("keydown", (e) => {
       this.keys.add(e.code);
-      if (e.code === "KeyE") this.onInteract?.();
+      if (e.code === "KeyE") {
+        const el = document.activeElement as HTMLElement | null;
+        const tag = el?.tagName?.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select" || el?.isContentEditable) {
+          return;
+        }
+        this.onInteract?.();
+      }
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
 
