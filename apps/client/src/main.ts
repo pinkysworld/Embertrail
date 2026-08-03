@@ -1,7 +1,16 @@
 import * as THREE from "three";
 import { Client } from "colyseus.js";
 import type { CharacterSheet, CombatState, Locale } from "@embertrail/shared";
-import { ARCHETYPES, SKILLS, NODE_BY_ID, TRAVEL_GRAPH, hitChancePercent } from "@embertrail/rules";
+import {
+  ARCHETYPES,
+  SKILLS,
+  NODE_BY_ID,
+  TRAVEL_GRAPH,
+  hitChancePercent,
+  findTravelPath,
+  travelDays,
+  reachableTowns,
+} from "@embertrail/rules";
 import { DUNGEONS, TOWNS } from "@embertrail/content";
 import { t, getLocale, setLocale, toggleLocale } from "./i18n";
 import { WorldScene } from "./game/world";
@@ -45,6 +54,9 @@ let combat: CombatState | null = null;
 let mode: "title" | "create" | "explore" | "travel" | "combat" | "dialogue" | "dungeon" = "title";
 let dialogue: { npcId: string; textKey: string; topics: string[] } | null = null;
 let travelDay = 1;
+/** Pending multi-leg path (node ids including current); next hop is path[1] */
+let pendingTravelPath: string[] | null = null;
+let pendingTravelDest: string | null = null;
 let dungeonId: string | null = null;
 let roomId: string | null = null;
 let roomClient: Awaited<ReturnType<Client["joinOrCreate"]>> | null = null;
@@ -676,6 +688,8 @@ async function enterGame(): Promise<void> {
 
   const townId = character.position.townId || "rimeport";
   const savedDungeon = character.position.dungeonId;
+  const mapNode = character.position.mapNodeId || townId;
+  travelDay = character.travelDay ?? 1;
 
   if (savedDungeon && DUNGEONS[savedDungeon]) {
     dungeonId = savedDungeon;
@@ -683,11 +697,18 @@ async function enterGame(): Promise<void> {
     mode = "dungeon";
     if (roomId) world.loadDungeonRoom(savedDungeon, roomId);
     startAmbient("dungeon");
+  } else if (NODE_BY_ID[mapNode] && NODE_BY_ID[mapNode].kind !== "town") {
+    mode = "explore";
+    dungeonId = null;
+    roomId = null;
+    world.loadWilderness(mapNode, NODE_BY_ID[mapNode].danger);
+    startAmbient("town");
   } else {
     mode = "explore";
     dungeonId = null;
     roomId = null;
     world.loadTown(townId);
+    character.position.mapNodeId = townId;
     startAmbient("town");
   }
 
@@ -812,16 +833,26 @@ function showJournal(): void {
 
 function showMap(): void {
   if (!character) return;
-  const nodes = TRAVEL_GRAPH.filter((n) => character!.knownMapNodes.includes(n.id) || n.kind === "town");
+  const here = currentMapNodeId();
+  const nodes = TRAVEL_GRAPH.filter(
+    (n) => character!.knownMapNodes.includes(n.id) || n.kind === "town"
+  );
   const pin = `<img class="quest-pin" src="${BASE}ui/quest_marker.png" alt="" />`;
   showPanel(
     `<h2>${t("ui.map")}</h2>
     <img class="map-compass" src="${BASE}ui/compass_rose.png" alt="" />
+    <p style="font-size:0.9rem">${t("travel.here") || "You are at"} <strong>${t(NODE_BY_ID[here]?.nameKey || here)}</strong>
+    · ${t("ui.day")} ${character.travelDay ?? travelDay}</p>
     <div style="font-size:0.9rem">${nodes
-      .map((n) => `${n.kind === "dungeon" || n.kind === "town" ? pin : "• "}${t(n.nameKey)} (${n.kind})`)
+      .map((n) => {
+        const mark = n.id === here ? "★ " : n.kind === "town" || n.kind === "dungeon_entrance" ? pin : "• ";
+        return `${mark}${t(n.nameKey)} <span style="opacity:0.7">(${n.kind})</span>`;
+      })
       .join("<br>")}</div>
-    <p style="color:#b8a88a;font-size:0.85rem;margin-top:8px;clear:both">${t("ui.travel")}: ${character.knownMapNodes.join(", ")}</p>`
+    <button class="btn primary" id="map-travel" style="margin-top:10px">${t("ui.travel")}</button>
+    <p style="color:#b8a88a;font-size:0.8rem;margin-top:8px;clear:both">${t("travel.cities_hint") || ""}</p>`
   );
+  document.getElementById("map-travel")!.onclick = () => showTravel();
 }
 
 function itemIconHtml(itemId: string, size = 28): string {
@@ -1258,183 +1289,392 @@ async function openQuestBoard(): Promise<void> {
   if (close) close.onclick = () => document.getElementById("center-panel")!.classList.add("hidden");
 }
 
-function showTravel(): void {
-  if (!character) return;
-  const here =
-    character.position.dungeonId
-      ? null
-      : NODE_BY_ID[character.position.townId || "rimeport"] || NODE_BY_ID.rimeport;
-  // Also allow from known wilderness nodes - use last town
-  const fromId = character.position.townId || "rimeport";
-  const node = NODE_BY_ID[fromId];
-  if (!node) return;
-  const links = node.links
-    .map((id) => NODE_BY_ID[id])
-    .filter(Boolean);
-  showPanel(
-    `<h2>${t("ui.travel")}</h2>
-    <p>${t(node.nameKey)} · ${t("ui.day")} ${travelDay} · ${t("ui.rations")} ${character.rations}</p>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-      ${links
-        .map(
-          (n) =>
-            `<button class="btn" data-to="${n!.id}">→ ${t(n!.nameKey)}</button>`
-        )
-        .join("")}
-    </div>
-    <div style="margin-top:10px">
-      <button class="btn" data-to="mine_ash_entrance">→ ${t("place.mine_ash")}</button>
-    </div>`
+function currentMapNodeId(): string {
+  if (!character) return "rimeport";
+  return (
+    character.position.mapNodeId ||
+    character.position.townId ||
+    "rimeport"
   );
-  document.querySelectorAll("#center-panel [data-to]").forEach((btn) => {
-    (btn as HTMLButtonElement).onclick = async () => {
-      const to = (btn as HTMLElement).dataset.to!;
-      await doTravel(fromId, to);
-    };
-  });
 }
 
-async function doTravel(from: string, to: string): Promise<void> {
+function syncTravelDayFromChar(): void {
+  if (character?.travelDay) travelDay = character.travelDay;
+}
+
+/**
+ * Schicksalsklinge-style overland map:
+ * pick a destination town/dungeon; march one road-leg per day with weather & events.
+ */
+function showTravel(): void {
   if (!character) return;
-  // Special: dungeon entrances
-  if (to === "mine_ash_entrance" || to.endsWith("_entrance")) {
-    document.getElementById("center-panel")!.classList.add("hidden");
-    // travel leg first if needed
-    try {
-      if (from !== to && NODE_BY_ID[from]?.links.includes(to)) {
-        const data = await api("/api/travel", {
-          method: "POST",
-          body: JSON.stringify({ characterId: character.id, from, to, day: travelDay }),
-        });
-        character = data.character;
-        travelDay++;
-        for (const n of data.notifications ?? []) notify(t(n));
-        if (data.leg?.event?.kind === "combat") {
-          await startCombat("wolf", 2);
-          return;
-        }
-      }
-    } catch {
-      /* direct enter */
-    }
-    const dungeonKey =
-      to === "mine_ash_entrance"
-        ? "mine_ash"
-        : to === "cult_cellars_entrance"
-          ? "cult_cellars"
-          : to === "ice_crypt_entrance"
-            ? "ice_crypt"
-            : "mine_ash";
-    await enterDungeon(dungeonKey);
+  if (character.position.dungeonId) {
+    notify(
+      getLocale() === "de"
+        ? "Verlasse zuerst den Kerker."
+        : "Leave the dungeon first.",
+      "warn"
+    );
     return;
   }
+  syncTravelDayFromChar();
+  const fromId = currentMapNodeId();
+  const node = NODE_BY_ID[fromId] || NODE_BY_ID.rimeport;
+  const day = character.travelDay ?? travelDay;
+  const weather = t(`travel.weather.clear`); // preview only
 
-  try {
-    // If link missing but both towns, route via crossroads
-    let pathFrom = from;
-    if (!NODE_BY_ID[from]?.links.includes(to)) {
-      // try multi-hop simple
-      if (NODE_BY_ID[from]?.links.includes("road_south") && to === "crossroads_ash") {
-        pathFrom = from;
-      }
+  // Adjacent legs (one day)
+  const adj = (node.links || [])
+    .map((id) => NODE_BY_ID[id])
+    .filter(Boolean) as typeof TRAVEL_GRAPH;
+
+  // Full journeys to other towns
+  const towns = reachableTowns(fromId).filter(
+    (id) => character!.knownMapNodes.includes(id) || id === "oakspire" || id === "mirehold" || id === "irondeep" || id === "rimeport"
+  );
+  // Always allow all four cities once you've left the starting area (SP exploration)
+  for (const city of ["rimeport", "oakspire", "mirehold", "irondeep"]) {
+    if (city !== fromId && !towns.includes(city) && NODE_BY_ID[city]) towns.push(city);
+  }
+
+  const pathPreview = (dest: string) => {
+    const p = findTravelPath(fromId, dest);
+    if (!p) return "?";
+    const days = travelDays(p);
+    return `${days}d · ${p.map((id) => t(NODE_BY_ID[id]?.nameKey || id)).join(" → ")}`;
+  };
+
+  showPanel(
+    `<h2><img class="map-compass" src="${BASE}ui/compass_rose.png" alt="" style="float:right;width:56px;height:56px;margin:0 0 8px 8px" />${t("ui.travel")}</h2>
+    <p style="font-size:0.9rem">${t("travel.here") || "You are at"} <strong>${t(node.nameKey)}</strong><br/>
+    ${t("ui.day")} <strong>${day}</strong> · ${t("ui.rations")} <strong>${character.rations}</strong>
+    ${pendingTravelDest ? `<br/><span style="color:#b8860b">${t("travel.marching") || "Marching to"} ${t(NODE_BY_ID[pendingTravelDest]?.nameKey || pendingTravelDest)}</span>` : ""}
+    </p>
+    <h3 style="margin-top:10px">${t("travel.nearby") || "Next leg (1 day)"}</h3>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${adj
+        .map((n) => {
+          const kindLabel =
+            n.kind === "town"
+              ? "🏘"
+              : n.kind === "dungeon_entrance"
+                ? "⛏"
+                : n.kind === "crossroads"
+                  ? "✝"
+                  : "🛤";
+          return `<button class="btn" data-leg="${n.id}">${kindLabel} ${t(n.nameKey)} <span style="opacity:0.7;font-size:0.8rem">(${n.kind})</span></button>`;
+        })
+        .join("")}
+    </div>
+    <h3 style="margin-top:12px">${t("travel.cities") || "Journey to a city"}</h3>
+    <p style="font-size:0.8rem;color:#b8a88a">${t("travel.cities_hint") || "Like Schicksalsklinge: each road segment costs a day, rations, and may bring weather or wolves."}</p>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${towns
+        .filter((id) => id !== fromId)
+        .map((id) => {
+          const p = findTravelPath(fromId, id);
+          const days = p ? travelDays(p) : 0;
+          return `<button class="btn primary" data-city="${id}">→ ${t(NODE_BY_ID[id].nameKey)} <span style="font-size:0.8rem;opacity:0.85">(${days} ${t("ui.day")}${days === 1 ? "" : "s"})</span>
+            <div style="font-size:0.72rem;opacity:0.75;font-weight:normal;margin-top:2px">${pathPreview(id)}</div>
+          </button>`;
+        })
+        .join("")}
+    </div>
+    ${
+      pendingTravelPath && pendingTravelPath.length > 1
+        ? `<button class="btn danger" id="travel-abort" style="margin-top:10px">${t("travel.abort") || "Abort journey"}</button>`
+        : ""
     }
+    <button class="btn" id="travel-close" style="margin-top:8px">${t("ui.close")}</button>`
+  );
+  void weather;
+
+  document.querySelectorAll("#center-panel [data-leg]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      const to = (btn as HTMLElement).dataset.leg!;
+      pendingTravelPath = null;
+      pendingTravelDest = null;
+      await marchOneLeg(fromId, to);
+    };
+  });
+  document.querySelectorAll("#center-panel [data-city]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      const city = (btn as HTMLElement).dataset.city!;
+      const path = findTravelPath(fromId, city);
+      if (!path || path.length < 2) {
+        notify(t("travel.no_path") || "No path found.", "warn");
+        return;
+      }
+      pendingTravelPath = path;
+      pendingTravelDest = city;
+      notify(
+        (getLocale() === "de" ? "Marsch beginnt: " : "March begins: ") +
+          path.map((id) => t(NODE_BY_ID[id]?.nameKey || id)).join(" → "),
+        "quest"
+      );
+      await marchOneLeg(path[0], path[1]);
+    };
+  });
+  const abortBtn = document.getElementById("travel-abort");
+  if (abortBtn) {
+    abortBtn.onclick = () => {
+      pendingTravelPath = null;
+      pendingTravelDest = null;
+      notify(t("travel.aborted") || "Journey aborted. You remain on the trail.", "info");
+      showTravel();
+    };
+  }
+  document.getElementById("travel-close")!.onclick = () => {
+    document.getElementById("center-panel")!.classList.add("hidden");
+    player.enabled = true;
+  };
+}
+
+/** Apply arrival visuals after a successful leg */
+function arriveAtNode(nodeId: string): void {
+  if (!character) return;
+  const dest = NODE_BY_ID[nodeId];
+  if (!dest) return;
+  character.position.mapNodeId = nodeId;
+  if (dest.kind === "town" && TOWNS[nodeId]) {
+    character.position.townId = nodeId;
+    character.position.dungeonId = undefined;
+    const sp = TOWNS[nodeId].spawn;
+    character.position.x = sp.x;
+    character.position.y = 1.6;
+    character.position.z = sp.z;
+    character.position.yaw = sp.yaw ?? 0;
+    world.loadTown(nodeId);
+    player.position.set(sp.x, 1.6, sp.z);
+    player.yaw = sp.yaw ?? 0;
+    mode = "explore";
+    startAmbient("town");
+    notify(
+      `${t("travel.arrived") || "Arrived:"} ${t(dest.nameKey)}`,
+      "quest"
+    );
+  } else if (dest.kind === "dungeon_entrance") {
+    // Stay at wilderness approach; offer enter
+    world.loadWilderness(nodeId, dest.danger);
+    player.position.set(0, 1.6, 6);
+    player.yaw = Math.PI;
+    mode = "explore";
+    startAmbient("town");
+    const map: Record<string, string> = {
+      mine_ash_entrance: "mine_ash",
+      cult_cellars_entrance: "cult_cellars",
+      ice_crypt_entrance: "ice_crypt",
+    };
+    const dkey = map[nodeId];
+    showPanel(
+      `<h2>${t(dest.nameKey)}</h2>
+      <p>${t("travel.dungeon_approach") || "The entrance yawns before you."}</p>
+      <button class="btn primary" id="enter-d">${t("ui.enter_dungeon") || "Enter"}</button>
+      <button class="btn" id="camp-d">${t("ui.camp") || "Camp"}</button>
+      <button class="btn" id="map-d">${t("ui.travel") || "Map"}</button>`
+    );
+    document.getElementById("enter-d")!.onclick = () => {
+      document.getElementById("center-panel")!.classList.add("hidden");
+      if (dkey) void enterDungeon(dkey);
+    };
+    document.getElementById("camp-d")!.onclick = () => {
+      document.getElementById("center-panel")!.classList.add("hidden");
+      void doCamp();
+    };
+    document.getElementById("map-d")!.onclick = () => showTravel();
+  } else {
+    // Road / crossroads wilderness
+    world.loadWilderness(nodeId, dest.danger);
+    player.position.set(0, 1.6, 4);
+    player.yaw = 0;
+    mode = "explore";
+    startAmbient("town");
+    notify(`${t("travel.camp") || "Trail camp:"} ${t(dest.nameKey)}`, "info");
+  }
+  updateHud();
+  if (OFFLINE) {
+    try {
+      saveOfflineCharacter(character);
+    } catch {
+      /* ok */
+    }
+  }
+  (window as any).__embertrailSyncMobile?.();
+}
+
+/** One day of march (one graph edge) — Schicksalsklinge road leg */
+async function marchOneLeg(from: string, to: string): Promise<void> {
+  if (!character) return;
+  document.getElementById("center-panel")!.classList.add("hidden");
+  syncTravelDayFromChar();
+  try {
     const data = await api("/api/travel", {
       method: "POST",
-      body: JSON.stringify({ characterId: character.id, from: pathFrom, to, day: travelDay }),
+      body: JSON.stringify({
+        characterId: character.id,
+        from,
+        to,
+        day: character.travelDay ?? travelDay,
+      }),
     });
     character = data.character;
-    travelDay++;
+    travelDay = character.travelDay ?? travelDay + 1;
+
+    // Weather / wear toasts
     for (const n of data.notifications ?? []) {
       try {
         notify(t(n));
       } catch {
-        notify(n);
+        notify(String(n));
       }
     }
-    const dest = NODE_BY_ID[to];
-    if (dest?.kind === "town" && character) {
-      character.position.townId = to;
-      character.position.dungeonId = undefined;
-      world.loadTown(to);
-      player.position.set(TOWNS[to].spawn.x, 1.6, TOWNS[to].spawn.z);
-      mode = "explore";
-      if (!SOLO_ONLY) {
-        try {
-          roomClient?.leave();
-          const client = new Client(WS_URL);
-          roomClient = await client.joinOrCreate("hub", { townId: to, character });
-        } catch {
-          /* solo */
-        }
-      }
-    } else if (dest?.kind === "dungeon_entrance") {
-      const map: Record<string, string> = {
-        mine_ash_entrance: "mine_ash",
-        cult_cellars_entrance: "cult_cellars",
-        ice_crypt_entrance: "ice_crypt",
-      };
-      await enterDungeon(map[to] || "mine_ash");
-      return;
-    }
-    document.getElementById("center-panel")!.classList.add("hidden");
-    updateHud();
-    notify(`${t("ui.travel")}: ${t(dest?.nameKey || "place.rimeport")}`);
 
-    // Fun travel encounters
+    const dest = NODE_BY_ID[to];
+    arriveAtNode(to);
+
+    // Advance multi-leg path
+    if (pendingTravelPath && pendingTravelPath[0] === from && pendingTravelPath[1] === to) {
+      pendingTravelPath = pendingTravelPath.slice(1);
+      if (pendingTravelPath.length <= 1) {
+        pendingTravelPath = null;
+        pendingTravelDest = null;
+      }
+    }
+
     const ev = data.leg?.event as
       | {
           kind?: string;
-          enemyType?: string;
-          count?: number;
           textKey?: string;
           choices?: Array<{ id: string; labelKey: string }>;
         }
       | undefined;
+
     if (ev?.kind === "combat") {
-      await startCombat(ev.enemyType || "wolf", ev.count || 2);
+      await startCombat("wolf", dest && dest.danger >= 3 ? 3 : 2);
       return;
     }
-    if (ev?.kind === "story" || ev?.kind === "discovery" || (ev?.choices && ev.choices.length)) {
+
+    if (ev && (ev.kind === "story" || ev.kind === "discovery" || ev.choices?.length)) {
       const choices = ev.choices?.length
         ? ev.choices
         : [{ id: "press_on", labelKey: "ui.continue" }];
       showPanel(
-        `<h2>${t("ui.travel")}</h2>
-        <p>${t(ev.textKey || "journal.arrival.body")}</p>
+        `<h2>${t("travel.event") || "On the road"}</h2>
+        <p>${t(ev.textKey || "event.merchant")}</p>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-          ${choices.map((c) => `<button class="btn" data-tev="${c.id}">${t(c.labelKey) || c.id}</button>`).join("")}
+          ${choices
+            .map(
+              (c) =>
+                `<button class="btn" data-tev="${c.id}">${t(c.labelKey) || c.id}</button>`
+            )
+            .join("")}
         </div>`
       );
       document.querySelectorAll("#center-panel [data-tev]").forEach((b) => {
         (b as HTMLButtonElement).onclick = async () => {
           const id = (b as HTMLElement).dataset.tev!;
           document.getElementById("center-panel")!.classList.add("hidden");
-          if (id === "explore" || id === "fight" || id === "ambush") {
+          if (id === "explore") {
             await startCombat("wolf", 1);
           } else if (id === "trade") {
-            notify(getLocale() === "de" ? "Du tauschst ein paar Münzen und Kräuter." : "You trade a few coins and herbs.", "loot");
             if (character) {
               character.copper = (character.copper || 0) + 12;
-              character.inventory = [...character.inventory, { itemId: "herb_woundwort", qty: 1 }];
-              // merge if exists
               const stacks = new Map<string, number>();
-              for (const it of character.inventory) {
+              for (const it of [
+                ...character.inventory,
+                { itemId: "herb_woundwort", qty: 1 },
+              ]) {
                 stacks.set(it.itemId, (stacks.get(it.itemId) || 0) + it.qty);
               }
-              character.inventory = [...stacks.entries()].map(([itemId, qty]) => ({ itemId, qty }));
+              character.inventory = [...stacks.entries()].map(([itemId, qty]) => ({
+                itemId,
+                qty,
+              }));
               updateHud();
+              if (OFFLINE) saveOfflineCharacter(character);
             }
+            notify(
+              getLocale() === "de"
+                ? "Du handelst mit dem Hausierer."
+                : "You trade with the peddler.",
+              "loot"
+            );
+            maybeContinueMarch();
           } else {
-            notify(getLocale() === "de" ? "Ihr zieht weiter." : "You press on.", "info");
+            notify(
+              getLocale() === "de" ? "Ihr zieht weiter." : "You press on.",
+              "info"
+            );
+            maybeContinueMarch();
           }
           player.enabled = true;
         };
       });
       return;
     }
+
+    // Offer continue march if multi-leg remaining
+    maybeContinueMarch();
   } catch (e: any) {
-    notify(String(e.message || e), "warn");
+    const msg = String(e.message || e);
+    if (msg.includes("no_link") || msg.includes("no_node")) {
+      notify(t("travel.no_path") || "That road is not connected from here.", "warn");
+    } else {
+      notify(msg, "warn");
+    }
+    showTravel();
   }
+}
+
+function maybeContinueMarch(): void {
+  if (!pendingTravelPath || pendingTravelPath.length < 2 || !character) {
+    player.enabled = true;
+    return;
+  }
+  const nextFrom = pendingTravelPath[0];
+  const nextTo = pendingTravelPath[1];
+  const destName = pendingTravelDest
+    ? t(NODE_BY_ID[pendingTravelDest]?.nameKey || pendingTravelDest)
+    : t(NODE_BY_ID[nextTo]?.nameKey || nextTo);
+  showPanel(
+    `<h2>${t("travel.camp") || "Trail camp"}</h2>
+    <p>${t("travel.continue_prompt") || "Another day's march toward"} <strong>${destName}</strong>.</p>
+    <p style="font-size:0.85rem;color:#b8a88a">${t("ui.rations")}: ${character.rations} · ${t("ui.day")}: ${character.travelDay ?? travelDay}</p>
+    <button class="btn primary" id="march-on">${t("travel.march") || "March on (1 day)"}</button>
+    <button class="btn" id="march-camp">${t("ui.camp") || "Camp / Rest"}</button>
+    <button class="btn" id="march-map">${t("ui.map") || "Map"}</button>
+    <button class="btn danger" id="march-stop">${t("travel.abort") || "End journey here"}</button>`
+  );
+  document.getElementById("march-on")!.onclick = () => void marchOneLeg(nextFrom, nextTo);
+  document.getElementById("march-camp")!.onclick = () => {
+    document.getElementById("center-panel")!.classList.add("hidden");
+    void doCamp();
+  };
+  document.getElementById("march-map")!.onclick = () => showTravel();
+  document.getElementById("march-stop")!.onclick = () => {
+    pendingTravelPath = null;
+    pendingTravelDest = null;
+    document.getElementById("center-panel")!.classList.add("hidden");
+    player.enabled = true;
+    notify(t("travel.aborted") || "You make camp and end the forced march.", "info");
+  };
+}
+
+/** @deprecated use marchOneLeg — kept name for any old callers */
+async function doTravel(from: string, to: string): Promise<void> {
+  // If multi-hop requested to a town, set path
+  const path = findTravelPath(from, to);
+  if (path && path.length > 2 && NODE_BY_ID[to]?.kind === "town") {
+    pendingTravelPath = path;
+    pendingTravelDest = to;
+    await marchOneLeg(path[0], path[1]);
+    return;
+  }
+  if (path && path.length >= 2) {
+    await marchOneLeg(path[0], path[1]);
+    return;
+  }
+  await marchOneLeg(from, to);
 }
 
 async function enterDungeon(id: string): Promise<void> {
@@ -1504,6 +1744,7 @@ async function leaveDungeonToHub(): Promise<void> {
   if (character) {
     character.position.dungeonId = undefined;
     character.position.townId = town;
+    character.position.mapNodeId = town;
   }
   if (!SOLO_ONLY) {
     try {
@@ -2060,6 +2301,11 @@ async function tryInteract(): Promise<void> {
 
   playSfx("ui_click");
 
+  if (near.kind === "wild_camp") {
+    void doCamp();
+    return;
+  }
+
   // Leave walkable building interior
   if (near.kind === "interior_exit") {
     const townId =
@@ -2398,6 +2644,7 @@ function loop(t: number): void {
         exit: t("ui.leave") || "Leave",
         interior_exit: t("ui.leave") || "Leave",
         interior_service: getLocale() === "de" ? "Service" : "Service",
+        wild_camp: t("ui.camp") || "Camp",
         door: t("ui.enter_dungeon") || "Door",
         chest: "Loot",
         boss: "Boss",

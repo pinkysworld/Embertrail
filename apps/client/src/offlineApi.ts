@@ -190,24 +190,61 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
   if (path === "/api/travel" && method === "POST") {
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
-    const from = body.from;
-    const to = body.to;
+    const from =
+      String(body.from || sheet.position.mapNodeId || sheet.position.townId || "rimeport");
+    const to = String(body.to);
     const fromNode = NODE_BY_ID[from];
-    if (!fromNode?.links.includes(to)) throw new Error("no_link");
+    const toNode = NODE_BY_ID[to];
+    if (!fromNode || !toNode) throw new Error("no_node");
+    // Allow adjacent legs only (multi-hop is done client-side one day at a time)
+    if (!fromNode.links.includes(to)) throw new Error("no_link");
+    const day = Number(body.day ?? sheet.travelDay ?? 1);
+    const seed = sheet.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     const leg = resolveTravelLeg({
       from,
       to,
-      day: Number(body.day ?? 1),
-      seed: sheet.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0),
+      day,
+      seed,
       party: [sheet],
     });
     const { sheet: after, notifications } = applyTravelToCharacter(sheet, leg);
-    after.knownMapNodes = [...new Set([...after.knownMapNodes, to, from])];
-    if (NODE_BY_ID[to]?.kind === "town") {
-      after.position = { ...after.position, townId: to, dungeonId: undefined };
+    after.knownMapNodes = [...new Set([...after.knownMapNodes, to, from, ...toNode.links])];
+    after.travelDay = day + 1;
+    const destKind = toNode.kind;
+    if (destKind === "town") {
+      const spawnTown = to;
+      after.position = {
+        ...after.position,
+        townId: spawnTown,
+        mapNodeId: to,
+        dungeonId: undefined,
+        x: 0,
+        y: 1.6,
+        z: 10,
+        yaw: 0,
+      };
+    } else {
+      // On the road / crossroads / dungeon approach
+      after.position = {
+        ...after.position,
+        mapNodeId: to,
+        townId: destKind === "dungeon_entrance" ? after.position.townId : undefined,
+        dungeonId: undefined,
+        x: 0,
+        y: 1.6,
+        z: 8,
+        yaw: 0,
+      };
     }
     saveChar(after);
-    return { character: after, leg, notifications };
+    return {
+      character: after,
+      leg,
+      notifications,
+      from,
+      to,
+      destKind,
+    };
   }
 
   // Use consumable outside combat (heal/focus) or convert coin piles

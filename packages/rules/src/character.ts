@@ -177,7 +177,8 @@ export function createCharacter(opts: {
     rations,
     diseases: [],
     portraitId: `${def.portraitBase}_${opts.gender}`,
-    position: { townId: "rimeport", x: 0, y: 1.6, z: 8, yaw: 0 },
+    position: { townId: "rimeport", mapNodeId: "rimeport", x: 0, y: 1.6, z: 8, yaw: 0 },
+    travelDay: 1,
     questFlags: { intro: 0 },
     journal: [
       {
@@ -187,7 +188,7 @@ export function createCharacter(opts: {
         timestamp: Date.now(),
       },
     ],
-    knownMapNodes: ["rimeport"],
+    knownMapNodes: ["rimeport", "road_south", "road_east", "road_west"],
   };
 
   return { character, errors };

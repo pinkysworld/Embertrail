@@ -131,7 +131,18 @@ export interface CharacterSheet {
   rations: number;
   diseases: string[];
   portraitId: string;
-  position: { townId?: string; dungeonId?: string; x: number; y: number; z: number; yaw: number };
+  position: {
+    townId?: string;
+    dungeonId?: string;
+    /** Current map node on the overland graph (town, road, crossroads) */
+    mapNodeId?: string;
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+  };
+  /** Campaign day counter (Schicksalsklinge-style calendar) */
+  travelDay?: number;
   questFlags: Record<string, number | boolean | string>;
   journal: JournalEntry[];
   knownMapNodes: string[];

@@ -83,6 +83,92 @@ export class WorldScene {
    * Day/night cycle. t in [0,1]: 0 = midnight, 0.25 = dawn, 0.5 = noon, 0.75 = dusk.
    * Affects sky, fog, hemisphere/directional lights, window glow, and lanterns.
    */
+  /**
+   * Overland camp / road scene (Schicksalsklinge-style: between towns).
+   * kind: wild | crossroads | dungeon approach flavor
+   */
+  loadWilderness(nodeId: string, danger = 1): void {
+    this.clear();
+    this.mode = "town"; // day/night still ok
+    this.currentTownId = null;
+    this.ensureSky();
+    if (this.sky) this.sky.visible = true;
+    this.scene.background = new THREE.Color(0x6a7a68);
+    this.scene.fog = new THREE.FogExp2(0x8a9a80, 0.028);
+    this.hemi.intensity = 0.7;
+    this.dir.intensity = 0.85;
+    this.amb.intensity = 0.25;
+
+    const groundId = danger >= 3 ? "mud" : danger >= 2 ? "dirt" : "grass";
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 80),
+      getMaterialTiled(groundId, 12, 12)
+    );
+    ground.rotation.x = -Math.PI / 2;
+    this.root.add(ground);
+
+    // Road strip
+    const road = new THREE.Mesh(
+      new THREE.BoxGeometry(4, 0.05, 50),
+      getMaterialTiled("dirt", 1, 10)
+    );
+    road.position.set(0, 0.03, 0);
+    this.root.add(road);
+
+    // Path markers / stones
+    for (let i = -3; i <= 3; i++) {
+      if (i === 0) continue;
+      const rock = new THREE.Mesh(
+        new THREE.BoxGeometry(0.6, 0.4, 0.5),
+        getMaterial("stone")
+      );
+      rock.position.set(2.8 * (i % 2 === 0 ? 1 : -1), 0.2, i * 5);
+      this.root.add(rock);
+    }
+
+    // Trees / pillars along sides
+    for (let i = 0; i < 10; i++) {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.25, 0.35, 3 + (i % 3), 6),
+        getMaterial("bark")
+      );
+      const side = i % 2 === 0 ? -6 : 6;
+      trunk.position.set(side + (i % 3) * 0.5, 1.5, -20 + i * 4.5);
+      this.root.add(trunk);
+    }
+
+    // Campfire ring at center for rest feel
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1.2, 0.12, 6, 16),
+      getMaterial("stone")
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(3, 0.1, 2);
+    this.root.add(ring);
+    const fire = new THREE.PointLight(0xff8844, 0.8, 12);
+    fire.position.set(3, 0.8, 2);
+    this.root.add(fire);
+    this.fillLights.push(fire);
+
+    // Continue travel interactable (map)
+    this.interactables.push({
+      id: "travel_continue",
+      position: new THREE.Vector3(0, 1, -2),
+      radius: 4,
+      kind: "travel",
+    });
+    this.interactables.push({
+      id: "travel_camp",
+      position: new THREE.Vector3(3, 1, 2),
+      radius: 2.5,
+      kind: "wild_camp",
+    });
+
+    this.addQuestMarker(0, -2, 2.4);
+    this.setTimeOfDay(this.timeOfDay);
+    void nodeId;
+  }
+
   /** Walkable single-player interior (tavern, temple, smithy, etc.) */
   loadInterior(kind: InteriorKind, titleId = "interior"): void {
     this.clear();

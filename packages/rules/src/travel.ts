@@ -19,6 +19,27 @@ export const TRAVEL_GRAPH: TravelNode[] = [
     danger: 0,
   },
   {
+    id: "road_east",
+    nameKey: "place.road_east",
+    kind: "wild",
+    links: ["rimeport", "crossroads_ash"],
+    danger: 1,
+  },
+  {
+    id: "road_west",
+    nameKey: "place.road_west",
+    kind: "wild",
+    links: ["rimeport", "coast_path"],
+    danger: 1,
+  },
+  {
+    id: "coast_path",
+    nameKey: "place.coast_path",
+    kind: "wild",
+    links: ["road_west", "crossroads_ash"],
+    danger: 2,
+  },
+  {
     id: "road_south",
     nameKey: "place.road_south",
     kind: "wild",
@@ -36,7 +57,7 @@ export const TRAVEL_GRAPH: TravelNode[] = [
     id: "crossroads_ash",
     nameKey: "place.crossroads_ash",
     kind: "crossroads",
-    links: ["road_south", "oakspire", "mirehold_road", "irondeep_pass"],
+    links: ["road_south", "road_east", "coast_path", "oakspire", "mirehold_road", "irondeep_pass"],
     danger: 2,
   },
   {
@@ -91,6 +112,56 @@ export const TRAVEL_GRAPH: TravelNode[] = [
 ];
 
 export const NODE_BY_ID = Object.fromEntries(TRAVEL_GRAPH.map((n) => [n.id, n]));
+
+/** BFS shortest path on the overland graph (inclusive of from/to). */
+export function findTravelPath(from: string, to: string): string[] | null {
+  if (from === to) return [from];
+  if (!NODE_BY_ID[from] || !NODE_BY_ID[to]) return null;
+  const queue = [from];
+  const prev = new Map<string, string | null>([[from, null]]);
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (cur === to) break;
+    for (const n of NODE_BY_ID[cur]?.links ?? []) {
+      if (prev.has(n)) continue;
+      prev.set(n, cur);
+      queue.push(n);
+    }
+  }
+  if (!prev.has(to)) return null;
+  const path: string[] = [];
+  let c: string | null = to;
+  while (c) {
+    path.push(c);
+    c = prev.get(c) ?? null;
+  }
+  path.reverse();
+  return path;
+}
+
+/** Days of march = number of edges on path */
+export function travelDays(path: string[]): number {
+  return Math.max(0, path.length - 1);
+}
+
+/** All town destinations reachable from a node */
+export function reachableTowns(from: string): string[] {
+  const towns: string[] = [];
+  const seen = new Set<string>([from]);
+  const q = [from];
+  while (q.length) {
+    const cur = q.shift()!;
+    const node = NODE_BY_ID[cur];
+    if (!node) continue;
+    if (node.kind === "town" && cur !== from) towns.push(cur);
+    for (const n of node.links) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      q.push(n);
+    }
+  }
+  return towns;
+}
 
 export function weatherForDay(seed: number, day: number): WeatherId {
   const rng = createRng(seed + day * 997);
