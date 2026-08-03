@@ -1,20 +1,21 @@
 {
-  "styleAnchor": "1990s German CRPG remaster aesthetic, painterly but readable in-game, muted earth and cold northern light, mud frost timber stone iron, subtle wear and grime, seamless tileable texture where applicable, no anime, no readable text, no logos, no watermarks",
+  "styleAnchor": "1990s German CRPG remaster, muted northern light, seamless tileable where noted, no text/logos",
+  "mode": "single-player",
   "textures": {
-    "ground": ["cobble", "dirt", "snow", "mud", "grass", "flagstone", "gravel", "sand", "water", "reed"],
-    "architecture": ["stone", "timber", "bark", "dwarf_stone", "cult", "ice", "moss_stone", "planks", "dock_planks", "brick_red", "brick"],
-    "roofs": ["thatch", "roof_tiles", "roof_tile", "slate_roof", "reed", "lava_ash", "canvas_sail"],
-    "props": ["metal", "leather", "cloth", "canvas_sail", "rope", "iron_floor", "ember_ash", "lava_ash", "frost_window", "glass"],
-    "productionCount": 35
+    "count": 44,
+    "ground": ["cobble", "dirt", "snow", "mud", "grass", "flagstone", "gravel", "sand", "water", "reed", "carpet", "marble", "forge_floor", "mosaic", "ember_ash", "lava_ash", "iron_floor"],
+    "architecture": ["stone", "timber", "bark", "dwarf_stone", "cult", "ice", "moss_stone", "planks", "dock_planks", "brick_red", "plaster", "cave_rock", "door_wood", "ceiling_wood"],
+    "roofs": ["thatch", "roof_tiles", "slate_roof", "reed", "canvas_sail"],
+    "props": ["metal", "leather", "cloth", "awning", "rope", "frost_window", "glass"],
+    "aliases": ["roof_tile", "brick", "ember_ash"]
   },
-  "wiring": {
-    "roofs": "town-aware roofIdForBuilding",
-    "dungeons": "mine gravel/ember_ash/lava_ash; cult lava_ash/ember_ash; ice snow",
-    "props": "dock pier, rope rails, brick chimneys, metal lanterns, frost windows"
-  },
-  "outputs": {
-    "textures": "apps/client/public/textures/",
-    "icons": "apps/client/public/icons/",
-    "ui": "apps/client/public/ui/"
-  }
+  "ui": [
+    "title", "title_bg", "panel_parchment", "button_metal_trim", "quest_marker",
+    "coin_pile", "compass_rose", "journal_cover", "slot_frame", "hp_bar_fill",
+    "focus_bar_fill", "crosshair", "door_icon"
+  ],
+  "icons": 29,
+  "portraits": 32,
+  "enemies": 7,
+  "interiors": ["tavern", "temple", "smithy", "market", "hall", "generic"]
 }

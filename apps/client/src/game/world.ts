@@ -10,7 +10,9 @@ export interface Interactable {
   kind: string;
 }
 
-type SceneMode = "town" | "dungeon";
+type SceneMode = "town" | "dungeon" | "interior";
+
+export type InteriorKind = "tavern" | "temple" | "smithy" | "market" | "hall" | "generic";
 
 export class WorldScene {
   scene = new THREE.Scene();
@@ -25,6 +27,8 @@ export class WorldScene {
   private timeOfDay = 0.38;
   private mode: SceneMode = "town";
   private currentTownId: string | null = null;
+  /** Town to return to when leaving an interior */
+  interiorReturnTownId: string | null = null;
   private windowMats: THREE.MeshStandardMaterial[] = [];
   private lanternLights: THREE.PointLight[] = [];
   private fillLights: THREE.Light[] = [];
@@ -79,6 +83,168 @@ export class WorldScene {
    * Day/night cycle. t in [0,1]: 0 = midnight, 0.25 = dawn, 0.5 = noon, 0.75 = dusk.
    * Affects sky, fog, hemisphere/directional lights, window glow, and lanterns.
    */
+  /** Walkable single-player interior (tavern, temple, smithy, etc.) */
+  loadInterior(kind: InteriorKind, titleId = "interior"): void {
+    this.clear();
+    this.mode = "interior";
+    if (this.sky) this.sky.visible = false;
+    this.scene.background = new THREE.Color(0x1a1410);
+    this.scene.fog = new THREE.FogExp2(0x1a1410, 0.04);
+    this.hemi.intensity = 0.35;
+    this.dir.intensity = 0.25;
+    this.amb.intensity = 0.4;
+
+    const floorId =
+      kind === "temple" ? "marble" : kind === "smithy" ? "forge_floor" : kind === "tavern" ? "carpet" : "planks";
+    const wallId =
+      kind === "temple" ? "stone" : kind === "smithy" ? "dwarf_stone" : kind === "hall" ? "bark" : "plaster";
+    const w = 12;
+    const d = 14;
+    const h = 4.2;
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      getMaterialTiled(floorId, 4, 5)
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = 0;
+    this.root.add(floor);
+
+    const ceiling = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      getMaterialTiled("ceiling_wood", 3, 3)
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = h;
+    this.root.add(ceiling);
+
+    const wallMat = getMaterialTiled(wallId, 3, 2);
+    // North wall
+    const n = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.35), wallMat);
+    n.position.set(0, h / 2, -d / 2);
+    this.root.add(n);
+    // South wall with door gap
+    const half = w / 2 - 1.1;
+    const sL = new THREE.Mesh(new THREE.BoxGeometry(half, h, 0.35), wallMat);
+    sL.position.set(-w / 4 - 0.55, h / 2, d / 2);
+    this.root.add(sL);
+    const sR = new THREE.Mesh(new THREE.BoxGeometry(half, h, 0.35), wallMat);
+    sR.position.set(w / 4 + 0.55, h / 2, d / 2);
+    this.root.add(sR);
+    // Door panel
+    const door = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 2.4, 0.12),
+      getMaterial("door_wood")
+    );
+    door.position.set(0, 1.2, d / 2 - 0.05);
+    this.root.add(door);
+    // East / West
+    const e = new THREE.Mesh(new THREE.BoxGeometry(0.35, h, d), wallMat);
+    e.position.set(w / 2, h / 2, 0);
+    this.root.add(e);
+    const west = new THREE.Mesh(new THREE.BoxGeometry(0.35, h, d), wallMat);
+    west.position.set(-w / 2, h / 2, 0);
+    this.root.add(west);
+
+    // Props by kind
+    if (kind === "tavern" || kind === "generic") {
+      const table = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 0.15, 1.1),
+        getMaterial("planks")
+      );
+      table.position.set(-2, 0.85, -1);
+      this.root.add(table);
+      const posts = getMaterial("planks");
+      for (const [ox, oz] of [
+        [-2.8, -1.4],
+        [-1.2, -1.4],
+        [-2.8, -0.6],
+        [-1.2, -0.6],
+      ] as const) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.85, 6), posts);
+        leg.position.set(ox, 0.42, oz);
+        this.root.add(leg);
+      }
+      // Awning strip over bar
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(4, 1.1, 0.8),
+        getMaterial("planks")
+      );
+      bar.position.set(2.5, 0.55, -4);
+      this.root.add(bar);
+    }
+    if (kind === "temple") {
+      const altar = new THREE.Mesh(
+        new THREE.BoxGeometry(2.5, 0.9, 1.2),
+        getMaterialTiled("mosaic", 2, 1)
+      );
+      altar.position.set(0, 0.45, -3.5);
+      this.root.add(altar);
+      const carpet = new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 6),
+        getMaterialTiled("carpet", 1, 3)
+      );
+      carpet.rotation.x = -Math.PI / 2;
+      carpet.position.set(0, 0.02, -0.5);
+      this.root.add(carpet);
+    }
+    if (kind === "smithy") {
+      const anvil = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.7, 0.6),
+        getMaterial("metal")
+      );
+      anvil.position.set(0, 0.4, -2);
+      this.root.add(anvil);
+      const forge = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 1.2, 1.5),
+        getMaterial("brick_red")
+      );
+      forge.position.set(3, 0.6, -4);
+      this.root.add(forge);
+      const glow = new THREE.PointLight(0xff6622, 1.2, 8);
+      glow.position.set(3, 1.2, -4);
+      this.root.add(glow);
+      this.fillLights.push(glow);
+    }
+    if (kind === "market") {
+      const stall = new THREE.Mesh(
+        new THREE.BoxGeometry(3, 0.1, 1.5),
+        getMaterialTiled("awning", 2, 1)
+      );
+      stall.position.set(0, 1.8, -2);
+      this.root.add(stall);
+      const counter = new THREE.Mesh(
+        new THREE.BoxGeometry(3, 0.9, 1),
+        getMaterial("planks")
+      );
+      counter.position.set(0, 0.45, -2);
+      this.root.add(counter);
+    }
+
+    // Warm fill light
+    const lamp = new THREE.PointLight(0xffcc88, 0.9, 16);
+    lamp.position.set(0, 3, 0);
+    this.root.add(lamp);
+    this.fillLights.push(lamp);
+
+    // Exit interactable at door
+    this.interactables.push({
+      id: "interior_exit",
+      position: new THREE.Vector3(0, 1, d / 2 - 0.5),
+      radius: 2.5,
+      kind: "interior_exit",
+    });
+    // Service points deeper in the room
+    this.interactables.push({
+      id: `interior_service_${titleId}`,
+      position: new THREE.Vector3(0, 1, -3),
+      radius: 3,
+      kind: "interior_service",
+    });
+
+    void kind;
+  }
+
   setTimeOfDay(t: number): void {
     this.timeOfDay = ((t % 1) + 1) % 1;
     if (this.mode !== "town") return;
@@ -361,7 +527,12 @@ export class WorldScene {
     ceil.userData.disposeMat = true;
     this.root.add(ceil);
 
-    const wallMat = getMaterial(room.wallTexture);
+    // Prefer cave_rock for natural walls when flagged, else content texture
+    const wallTex =
+      room.wallTexture === "dwarf_stone" && room.id.includes("mine")
+        ? "cave_rock"
+        : room.wallTexture;
+    const wallMat = getMaterial(wallTex);
     const hw = room.width / 2;
     const hd = room.depth / 2;
     const h = 4.2;
@@ -745,7 +916,7 @@ export class WorldScene {
     }
     const roof = new THREE.Mesh(
       new THREE.BoxGeometry(2.2, 0.08, 1.4),
-      getMaterialTiled("cloth", 2, 1.5)
+      getMaterialTiled("awning", 2, 1.5)
     );
     roof.position.set(x, 1.65, z);
     roof.rotation.z = 0.08;

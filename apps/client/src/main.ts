@@ -22,7 +22,9 @@ import type { PartyState } from "@embertrail/shared";
 
 const API = "";
 const WS_URL = `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:2567`;
-const OFFLINE = isOfflineMode();
+/** Single-player focus: always use local offline rules on static hosts; never require multiplayer */
+const OFFLINE = isOfflineMode() || true; // force solo for this release
+const SOLO_ONLY = true;
 const BASE = import.meta.env.BASE_URL;
 
 /** Wire public UI chrome into CSS vars (respects GitHub Pages base path). */
@@ -700,14 +702,14 @@ async function enterGame(): Promise<void> {
   renderModeBar();
   (window as any).__embertrailSyncMobile?.();
 
-  if (!savedDungeon) {
+  // Multiplayer intentionally disabled for single-player release
+  if (!SOLO_ONLY && !savedDungeon) {
     try {
       colyseusClient = new Client(WS_URL);
       roomClient = await colyseusClient.joinOrCreate("hub", { townId, character });
       wireRoomMessages(roomClient, "hub");
     } catch (e) {
       console.warn("Multiplayer unavailable, solo mode", e);
-      if (!OFFLINE) notify("Solo mode (server WS optional)", "info");
     }
   }
 
@@ -1356,12 +1358,14 @@ async function doTravel(from: string, to: string): Promise<void> {
       world.loadTown(to);
       player.position.set(TOWNS[to].spawn.x, 1.6, TOWNS[to].spawn.z);
       mode = "explore";
-      try {
-        roomClient?.leave();
-        const client = new Client(WS_URL);
-        roomClient = await client.joinOrCreate("hub", { townId: to, character });
-      } catch {
-        /* solo */
+      if (!SOLO_ONLY) {
+        try {
+          roomClient?.leave();
+          const client = new Client(WS_URL);
+          roomClient = await client.joinOrCreate("hub", { townId: to, character });
+        } catch {
+          /* solo */
+        }
       }
     } else if (dest?.kind === "dungeon_entrance") {
       const map: Record<string, string> = {
@@ -1455,24 +1459,25 @@ async function enterDungeon(id: string): Promise<void> {
   startAmbient("dungeon");
   updateHud();
 
-  // Co-op: leave hub, join party dungeon instance
-  try {
-    if (roomClient) {
-      await roomClient.leave();
-      roomClient = null;
+  // Single-player: no multiplayer dungeon room
+  if (!SOLO_ONLY) {
+    try {
+      if (roomClient) {
+        await roomClient.leave();
+        roomClient = null;
+      }
+      if (!colyseusClient) colyseusClient = new Client(WS_URL);
+      const partyId = party?.id || character.id;
+      dungeonRoom = await colyseusClient.joinOrCreate("dungeon", {
+        dungeonId: id,
+        partyId,
+        roomId: roomId,
+        character,
+      });
+      wireRoomMessages(dungeonRoom, "dungeon");
+    } catch (e) {
+      console.warn("Dungeon multiplayer unavailable", e);
     }
-    if (!colyseusClient) colyseusClient = new Client(WS_URL);
-    const partyId = party?.id || character.id; // solo party id = self
-    dungeonRoom = await colyseusClient.joinOrCreate("dungeon", {
-      dungeonId: id,
-      partyId,
-      roomId: roomId,
-      character,
-    });
-    wireRoomMessages(dungeonRoom, "dungeon");
-    notify(party ? "Joined party dungeon instance" : "Dungeon instance (invite party from hub)");
-  } catch (e) {
-    console.warn("Dungeon multiplayer unavailable", e);
   }
 }
 
@@ -1500,12 +1505,14 @@ async function leaveDungeonToHub(): Promise<void> {
     character.position.dungeonId = undefined;
     character.position.townId = town;
   }
-  try {
-    if (!colyseusClient) colyseusClient = new Client(WS_URL);
-    roomClient = await colyseusClient.joinOrCreate("hub", { townId: town, character });
-    wireRoomMessages(roomClient, "hub");
-  } catch {
-    /* solo */
+  if (!SOLO_ONLY) {
+    try {
+      if (!colyseusClient) colyseusClient = new Client(WS_URL);
+      roomClient = await colyseusClient.joinOrCreate("hub", { townId: town, character });
+      wireRoomMessages(roomClient, "hub");
+    } catch {
+      /* solo */
+    }
   }
   updateHud();
 }
@@ -1917,7 +1924,17 @@ function openNpcDialogue(npcId: string): void {
   }
 }
 
-/** Building door menu: talk / shop / rest / enter dungeon */
+function interiorKindForBuilding(buildingId: string, interact?: string): import("./game/world").InteriorKind {
+  const id = `${buildingId} ${interact || ""}`.toLowerCase();
+  if (id.includes("tavern") || id.includes("inn")) return "tavern";
+  if (id.includes("temple") || id.includes("priest")) return "temple";
+  if (id.includes("smith") || id.includes("forge")) return "smithy";
+  if (id.includes("market") || id.includes("merchant") || id.includes("buyer")) return "market";
+  if (id.includes("grove") || id.includes("hall") || id.includes("bark")) return "hall";
+  return "generic";
+}
+
+/** Building door: enter walkable interior or quick actions */
 function openBuilding(interactId: string): void {
   if (!character) return;
   const townId = character.position.townId || "rimeport";
@@ -1938,21 +1955,56 @@ function openBuilding(interactId: string): void {
     !!npc &&
     (npc.kind === "merchant" || npc.kind === "smith" || npc.kind === "innkeep");
   const canRest = !!npc && (npc.kind === "innkeep" || npc.kind === "priest");
+  const kind = interiorKindForBuilding(building?.id || interactId, building?.interact);
   playSfx("door");
   showPanel(
-    `<h2>${title}</h2>
+    `<h2><img src="${BASE}ui/door_icon.png" alt="" width="28" height="28" style="vertical-align:middle;margin-right:6px;border-radius:4px" />${title}</h2>
     <p style="font-size:0.9rem;color:#c4b49a">${
       getLocale() === "de"
-        ? "Du trittst ein. Was möchtest du tun?"
-        : "You step inside. What will you do?"
+        ? "Tür offen. Tritt ein und sieh dich um — oder sprich gleich mit dem Personal."
+        : "The door is open. Step inside to look around, or deal with the staff."
     }</p>
     <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-      ${npc ? `<button class="btn primary" id="b-talk">${t("ui.talk")}</button>` : ""}
+      <button class="btn primary" id="b-enter">${getLocale() === "de" ? "Eintreten (3D)" : "Enter (walk inside)"}</button>
+      ${npc ? `<button class="btn" id="b-talk">${t("ui.talk")}</button>` : ""}
       ${canShop ? `<button class="btn" id="b-shop">${t("ui.shop") || "Shop"}</button>` : ""}
       ${canRest ? `<button class="btn" id="b-rest">${t("ui.camp") || "Rest"}</button>` : ""}
-      <button class="btn" id="b-leave">${t("ui.leave") || "Leave"}</button>
+      <button class="btn" id="b-leave">${t("ui.close") || "Close"}</button>
     </div>`
   );
+  document.getElementById("b-enter")!.onclick = () => {
+    document.getElementById("center-panel")!.classList.add("hidden");
+    world.interiorReturnTownId = townId;
+    world.loadInterior(kind, building?.id || interactId);
+    mode = "explore"; // still first-person explore controls
+    // Tag mode for exit handling via world interior_exit
+    (mode as string);
+    player.position.set(0, 1.6, 5);
+    player.yaw = Math.PI;
+    player.enabled = true;
+    character!.position = {
+      ...character!.position,
+      townId,
+      dungeonId: undefined,
+      x: 0,
+      y: 1.6,
+      z: 5,
+      yaw: Math.PI,
+    };
+    // Stash interior flag
+    character!.questFlags.__interior = building?.id || interactId;
+    character!.questFlags.__interior_npc = npcId || "";
+    startAmbient("town");
+    playSfx("door");
+    notify(
+      getLocale() === "de"
+        ? "Drinnen. Gehe zur Tür zum Verlassen, nach hinten für Dienste."
+        : "Inside. Door to leave; walk to the back for services.",
+      "info"
+    );
+    updateHud();
+    (window as any).__embertrailSyncMobile?.();
+  };
   const talk = document.getElementById("b-talk");
   if (talk && npcId)
     talk.onclick = () => {
@@ -2007,6 +2059,85 @@ async function tryInteract(): Promise<void> {
   }
 
   playSfx("ui_click");
+
+  // Leave walkable building interior
+  if (near.kind === "interior_exit") {
+    const townId =
+      world.interiorReturnTownId ||
+      character.position.townId ||
+      "rimeport";
+    delete character.questFlags.__interior;
+    delete character.questFlags.__interior_npc;
+    world.interiorReturnTownId = null;
+    world.loadTown(townId);
+    const spawn = TOWNS[townId]?.spawn;
+    player.position.set(spawn?.x ?? 0, 1.6, spawn?.z ?? 10);
+    player.yaw = spawn?.yaw ?? 0;
+    character.position = {
+      townId,
+      x: player.position.x,
+      y: 1.6,
+      z: player.position.z,
+      yaw: player.yaw,
+    };
+    mode = "explore";
+    playSfx("door");
+    startAmbient("town");
+    notify(getLocale() === "de" ? "Zurück auf die Straße." : "Back on the street.", "info");
+    updateHud();
+    return;
+  }
+  if (near.kind === "interior_service") {
+    const npcId = String(character.questFlags.__interior_npc || "");
+    const town = TOWNS[character.position.townId || "rimeport"];
+    const npc = npcId ? town?.npcs.find((n) => n.id === npcId) : undefined;
+    const canShop =
+      !!npc &&
+      (npc.kind === "merchant" || npc.kind === "smith" || npc.kind === "innkeep");
+    const canRest = !!npc && (npc.kind === "innkeep" || npc.kind === "priest");
+    showPanel(
+      `<h2>${getLocale() === "de" ? "Service" : "Service"}</h2>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${npcId ? `<button class="btn primary" id="is-talk">${t("ui.talk")}</button>` : ""}
+        ${canShop ? `<button class="btn" id="is-shop">${t("ui.shop")}</button>` : ""}
+        ${canRest ? `<button class="btn" id="is-rest">${t("ui.camp")}</button>` : ""}
+        <button class="btn" id="is-close">${t("ui.close")}</button>
+      </div>`
+    );
+    if (npcId)
+      document.getElementById("is-talk")!.onclick = () => {
+        document.getElementById("center-panel")!.classList.add("hidden");
+        openNpcDialogue(npcId);
+      };
+    const shopBtn = document.getElementById("is-shop");
+    if (shopBtn)
+      shopBtn.onclick = () => {
+        document.getElementById("center-panel")!.classList.add("hidden");
+        void showShop();
+      };
+    const restBtn = document.getElementById("is-rest");
+    if (restBtn)
+      restBtn.onclick = async () => {
+        try {
+          const data = await api("/api/camp", {
+            method: "POST",
+            body: JSON.stringify({ characterId: character!.id }),
+          });
+          character = data.character;
+          updateHud();
+          playSfx("cast");
+          notify(getLocale() === "de" ? "Ausgeruht." : "Rested.", "loot");
+          document.getElementById("center-panel")!.classList.add("hidden");
+        } catch {
+          notify(t("travel.starving") || "Need rations.", "warn");
+        }
+      };
+    document.getElementById("is-close")!.onclick = () => {
+      document.getElementById("center-panel")!.classList.add("hidden");
+      player.enabled = true;
+    };
+    return;
+  }
 
   // Dungeon entrances on buildings (cult cellars, ice crypt)
   if (near.kind === "dungeon" || near.id.startsWith("dungeon_")) {
@@ -2259,12 +2390,14 @@ function loop(t: number): void {
       prompt.classList.remove("hidden");
       const labelMap: Record<string, string> = {
         npc: t("ui.talk"),
-        building: t("ui.enter_dungeon") !== "ui.enter_dungeon" ? "Enter" : "Enter",
+        building: getLocale() === "de" ? "Eintreten" : "Enter",
         dungeon: t("ui.enter_dungeon") || "Enter",
         travel: t("ui.travel"),
         quest_board: t("place.quest_board") || "Board",
         encounter: t("ui.attack") || "Fight",
         exit: t("ui.leave") || "Leave",
+        interior_exit: t("ui.leave") || "Leave",
+        interior_service: getLocale() === "de" ? "Service" : "Service",
         door: t("ui.enter_dungeon") || "Door",
         chest: "Loot",
         boss: "Boss",

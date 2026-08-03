@@ -94,6 +94,11 @@ const LARGE_REPEAT = new Set([
   "sand",
   "reed",
   "dock_planks",
+  "carpet",
+  "marble",
+  "forge_floor",
+  "mosaic",
+  "cave_rock",
 ]);
 
 /** Material IDs with procedural fallbacks; PNG override at textures/{id}.png */
@@ -136,6 +141,16 @@ export const MATERIAL_IDS = [
   "frost_window",
   "glass",
   "dock_planks",
+  // Interiors (single-player buildings)
+  "plaster",
+  "carpet",
+  "ceiling_wood",
+  "door_wood",
+  "marble",
+  "forge_floor",
+  "awning",
+  "cave_rock",
+  "mosaic",
 ] as const;
 
 export type MaterialId = (typeof MATERIAL_IDS)[number];
