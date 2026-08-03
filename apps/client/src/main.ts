@@ -9,7 +9,7 @@ import { CombatScene } from "./game/combatScene";
 import { PlayerController } from "./game/player";
 import { isOfflineMode, offlineApi, getOfflineCharacter, saveOfflineCharacter } from "./offlineApi";
 import { SHOPS, QUESTS } from "@embertrail/content";
-import { ALCHEMY_RECIPES } from "@embertrail/rules";
+import { ALCHEMY_RECIPES, ITEMS } from "@embertrail/rules";
 import {
   unlockAudio,
   playSfx,
@@ -827,20 +827,61 @@ function itemIconHtml(itemId: string, size = 28): string {
   return `<img src="${src}" alt="" width="${size}" height="${size}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:3px;border:1px solid var(--border);background:#1a1510;flex-shrink:0" onerror="this.style.display='none'" />`;
 }
 
+function isEquippable(itemId: string): boolean {
+  const def = ITEMS[itemId];
+  if (!def) return itemId === "foxbrand_axe";
+  return def.kind === "weapon" || def.kind === "armor" || def.kind === "shield" || itemId === "foxbrand_axe";
+}
+
+function isUsable(itemId: string): boolean {
+  const def = ITEMS[itemId];
+  if (itemId === "copper_coins") return true;
+  if (!def) return false;
+  return def.kind === "consumable" || !!def.heal || itemId === "potion_focus";
+}
+
+function equippedLabel(itemId: string): string {
+  if (!character) return "";
+  const eq = character.equipped;
+  const slots: string[] = [];
+  if (eq.mainHand === itemId) slots.push("hand");
+  if (eq.offHand === itemId) slots.push("off");
+  if (eq.armor === itemId) slots.push("armor");
+  if (eq.boots === itemId) slots.push("boots");
+  return slots.length ? ` [${slots.join(",")}]` : "";
+}
+
 function showInventory(): void {
   if (!character) return;
-  const usable = new Set(["potion_heal", "potion_focus", "ration", "rations_pack"]);
+  const eq = character.equipped;
   showPanel(
     `<h2>${t("ui.inventory")}</h2>
-    <div class="inv-grid" style="display:flex;flex-direction:column;gap:6px;font-size:0.9rem">${character.inventory
-      .map((i) => {
-        const canUse = usable.has(i.itemId);
-        return `<div class="inv-slot">${itemIconHtml(i.itemId, 36)}
-          <span style="flex:1">${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${i.durability != null ? ` (${i.durability}%)` : ""}</span>
+    <div style="font-size:0.85rem;color:#b8a88a;margin-bottom:8px">
+      ${t("ui.equipped") || "Equipped"}:
+      ${eq.mainHand ? itemIconHtml(eq.mainHand, 22) + " " + (t(`item.${eq.mainHand}`) || eq.mainHand) : "—"}
+      · ${eq.offHand ? t(`item.${eq.offHand}`) || eq.offHand : "—"}
+      · ${eq.armor ? t(`item.${eq.armor}`) || eq.armor : "—"}
+      · ${eq.boots ? t(`item.${eq.boots}`) || eq.boots : "—"}
+    </div>
+    <div class="inv-grid" style="display:flex;flex-direction:column;gap:6px;font-size:0.9rem">${
+      character.inventory.length
+        ? character.inventory
+            .map((i) => {
+              const canUse = isUsable(i.itemId);
+              const canEquip = isEquippable(i.itemId);
+              const worn = !!equippedLabel(i.itemId);
+              return `<div class="inv-slot">${itemIconHtml(i.itemId, 36)}
+          <span style="flex:1">${t(`item.${i.itemId}`) || i.itemId} ×${i.qty}${equippedLabel(i.itemId)}</span>
+          <span style="display:flex;gap:4px;flex-wrap:wrap">
           ${canUse ? `<button class="btn" data-use="${i.itemId}">${t("ui.use") || "Use"}</button>` : ""}
+          ${canEquip && !worn ? `<button class="btn primary" data-equip="${i.itemId}">${t("ui.equip") || "Equip"}</button>` : ""}
+          ${canEquip && worn ? `<button class="btn" data-unequip="${i.itemId}">${t("ui.unequip") || "Unequip"}</button>` : ""}
+          </span>
         </div>`;
-      })
-      .join("")}</div>
+            })
+            .join("")
+        : `<p style="color:#b8a88a">${t("ui.empty") || "Empty pack."}</p>`
+    }</div>
     <h3 style="margin-top:12px">${t("ui.skills")}</h3>
     <div class="skill-list">${Object.entries(character.skills)
       .filter(([, v]) => v > 0)
@@ -861,6 +902,47 @@ function showInventory(): void {
         updateHud();
         playSfx("cast");
         notify(t(data.notification || "notify.healed") || "Used item", "loot");
+        showInventory();
+      } catch (e: any) {
+        notify(String(e.message || e), "warn");
+      }
+    };
+  });
+  document.querySelectorAll("#center-panel [data-equip]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      try {
+        const data = await api("/api/item/equip", {
+          method: "POST",
+          body: JSON.stringify({
+            characterId: character!.id,
+            itemId: (btn as HTMLElement).dataset.equip,
+          }),
+        });
+        character = data.character;
+        updateHud();
+        playSfx("ui_click");
+        notify(t("notify.equipped") || "Equipped.", "loot");
+        showInventory();
+      } catch (e: any) {
+        notify(String(e.message || e), "warn");
+      }
+    };
+  });
+  document.querySelectorAll("#center-panel [data-unequip]").forEach((btn) => {
+    (btn as HTMLButtonElement).onclick = async () => {
+      try {
+        const data = await api("/api/item/equip", {
+          method: "POST",
+          body: JSON.stringify({
+            characterId: character!.id,
+            itemId: (btn as HTMLElement).dataset.unequip,
+            unequip: true,
+          }),
+        });
+        character = data.character;
+        updateHud();
+        playSfx("ui_click");
+        notify(t("notify.unequipped") || "Unequipped.", "info");
         showInventory();
       } catch (e: any) {
         notify(String(e.message || e), "warn");
@@ -1804,23 +1886,154 @@ function showDialogue(): void {
   });
 }
 
+const DUNGEON_FROM_INTERACT: Record<string, string> = {
+  dungeon_cult: "cult_cellars",
+  dungeon_crypt: "ice_crypt",
+  dungeon_mine: "mine_ash",
+  cult_cellars: "cult_cellars",
+  ice_crypt: "ice_crypt",
+  mine_ash: "mine_ash",
+};
+
+function openNpcDialogue(npcId: string): void {
+  if (!character) return;
+  if (roomClient) {
+    roomClient.send("interact", { targetId: npcId });
+    return;
+  }
+  const town = TOWNS[character.position.townId || "rimeport"];
+  const npc = town?.npcs.find((n) => n.id === npcId);
+  if (npc) {
+    dialogue = { npcId: npc.id, textKey: npc.greetingKey, topics: npc.topics };
+    showDialogue();
+  } else {
+    // Building tagged with npc id but no NPC record — still open a simple greeting
+    dialogue = {
+      npcId,
+      textKey: "npc.merchant.greeting",
+      topics: ["farewell"],
+    };
+    showDialogue();
+  }
+}
+
+/** Building door menu: talk / shop / rest / enter dungeon */
+function openBuilding(interactId: string): void {
+  if (!character) return;
+  const townId = character.position.townId || "rimeport";
+  const town = TOWNS[townId];
+  const building = town?.buildings.find(
+    (b) => b.id === interactId || b.interact === interactId
+  );
+  const npcId = building?.interact?.startsWith("npc")
+    ? building.interact
+    : interactId.startsWith("npc")
+      ? interactId
+      : null;
+  const npc = npcId ? town?.npcs.find((n) => n.id === npcId) : undefined;
+  const title = building
+    ? t(building.labelKey) || building.id
+    : t(`place.${townId}`);
+  const canShop =
+    !!npc &&
+    (npc.kind === "merchant" || npc.kind === "smith" || npc.kind === "innkeep");
+  const canRest = !!npc && (npc.kind === "innkeep" || npc.kind === "priest");
+  playSfx("door");
+  showPanel(
+    `<h2>${title}</h2>
+    <p style="font-size:0.9rem;color:#c4b49a">${
+      getLocale() === "de"
+        ? "Du trittst ein. Was möchtest du tun?"
+        : "You step inside. What will you do?"
+    }</p>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      ${npc ? `<button class="btn primary" id="b-talk">${t("ui.talk")}</button>` : ""}
+      ${canShop ? `<button class="btn" id="b-shop">${t("ui.shop") || "Shop"}</button>` : ""}
+      ${canRest ? `<button class="btn" id="b-rest">${t("ui.camp") || "Rest"}</button>` : ""}
+      <button class="btn" id="b-leave">${t("ui.leave") || "Leave"}</button>
+    </div>`
+  );
+  const talk = document.getElementById("b-talk");
+  if (talk && npcId)
+    talk.onclick = () => {
+      document.getElementById("center-panel")!.classList.add("hidden");
+      openNpcDialogue(npcId);
+    };
+  const shop = document.getElementById("b-shop");
+  if (shop)
+    shop.onclick = () => {
+      document.getElementById("center-panel")!.classList.add("hidden");
+      void showShop();
+    };
+  const rest = document.getElementById("b-rest");
+  if (rest)
+    rest.onclick = async () => {
+      try {
+        const data = await api("/api/camp", {
+          method: "POST",
+          body: JSON.stringify({ characterId: character!.id }),
+        });
+        character = data.character;
+        updateHud();
+        playSfx("cast");
+        notify(
+          getLocale() === "de"
+            ? "Du ruhst dich aus und heilst."
+            : "You rest and recover.",
+          "loot"
+        );
+        document.getElementById("center-panel")!.classList.add("hidden");
+      } catch {
+        notify(t("travel.starving") || "Need rations to rest.", "warn");
+      }
+    };
+  document.getElementById("b-leave")!.onclick = () => {
+    document.getElementById("center-panel")!.classList.add("hidden");
+    player.enabled = true;
+  };
+}
+
 async function tryInteract(): Promise<void> {
   if (!character || mode === "combat") return;
   const near = world.nearestInteractable(player.position);
-  if (!near) return;
+  if (!near) {
+    notify(
+      getLocale() === "de"
+        ? "Nichts in Reichweite. Geh näher an Türen, NPCs oder Schatz."
+        : "Nothing in range. Move closer to doors, people, or loot.",
+      "info"
+    );
+    return;
+  }
+
+  playSfx("ui_click");
+
+  // Dungeon entrances on buildings (cult cellars, ice crypt)
+  if (near.kind === "dungeon" || near.id.startsWith("dungeon_")) {
+    const key = DUNGEON_FROM_INTERACT[near.id] || near.id.replace(/^dungeon_/, "");
+    const dungeonKey =
+      key === "cult" ? "cult_cellars" : key === "crypt" ? "ice_crypt" : key;
+    await enterDungeon(DUNGEON_FROM_INTERACT[near.id] || dungeonKey);
+    return;
+  }
 
   if (near.kind === "npc") {
-    if (roomClient) roomClient.send("interact", { targetId: near.id });
-    else {
-      const town = TOWNS[character.position.townId || "rimeport"];
-      const npc = town?.npcs.find((n) => n.id === near.id);
-      if (npc) {
-        dialogue = { npcId: npc.id, textKey: npc.greetingKey, topics: npc.topics };
-        showDialogue();
-      }
+    // Prefer building menu when this is a building door (npc id on building)
+    const town = TOWNS[character.position.townId || "rimeport"];
+    const asBuilding = town?.buildings.some((b) => b.interact === near.id);
+    if (asBuilding && mode === "explore") {
+      openBuilding(near.id);
+    } else {
+      openNpcDialogue(near.id);
     }
     return;
   }
+
+  if (near.kind === "building") {
+    openBuilding(near.id);
+    return;
+  }
+
   if (near.kind === "travel") {
     showTravel();
     return;
@@ -1831,12 +2044,12 @@ async function tryInteract(): Promise<void> {
   }
   if (near.kind === "encounter") {
     const type = near.id.replace("encounter_", "");
-    await startCombat(type, type === "ash_guardian" ? 1 : 2);
+    await startCombat(type, type === "ash_guardian" || type === "frost_wight" ? 1 : 2);
     return;
   }
   if (near.kind === "exit") {
     await leaveDungeonToHub();
-    notify(t("ui.leave"));
+    notify(t("ui.leave") || "You leave.");
     return;
   }
   if (near.kind === "door" && dungeonId && roomId) {
@@ -1846,47 +2059,103 @@ async function tryInteract(): Promise<void> {
     const to = feature?.data?.to as string | undefined;
     if (to) {
       roomId = to;
+      if (character.position) character.position.dungeonId = dungeonId;
       world.loadDungeonRoom(dungeonId, to);
       player.position.set(0, 1.6, 6);
       if (dungeonRoom) dungeonRoom.send("change_room", { roomId: to });
       playSfx("door");
       const nr = dungeon.rooms.find((r) => r.id === to);
       if (nr) notify(t(nr.introKey));
+      updateHud();
+      if (OFFLINE) {
+        try {
+          saveOfflineCharacter({
+            ...character,
+            position: { ...character.position, dungeonId, x: 0, y: 1.6, z: 6, yaw: Math.PI },
+          });
+        } catch {
+          /* ok */
+        }
+      }
+    } else {
+      notify("Door won't open.", "warn");
     }
     return;
   }
-  if ((near.kind === "greed" || near.kind === "boss" || near.kind === "chest" || near.kind === "puzzle") && dungeonId && roomId) {
+  if (
+    (near.kind === "greed" ||
+      near.kind === "boss" ||
+      near.kind === "chest" ||
+      near.kind === "puzzle") &&
+    dungeonId &&
+    roomId
+  ) {
     if (near.kind === "greed") {
       showPanel(
         `<h2>${t("dungeon.mine.greed")}</h2>
         <button class="btn danger" id="g-all">${t("dungeon.mine.greed.take_all")}</button>
         <button class="btn primary" id="g-need">${t("dungeon.mine.greed.take_need")}</button>`
       );
-      document.getElementById("g-all")!.onclick = () => useFeature(near.id, "take_all");
-      document.getElementById("g-need")!.onclick = () => useFeature(near.id, "take_need");
+      document.getElementById("g-all")!.onclick = () => void useFeature(near.id, "take_all");
+      document.getElementById("g-need")!.onclick = () => void useFeature(near.id, "take_need");
       return;
     }
     await useFeature(near.id);
-    if (near.kind === "boss") await startCombat(dungeonId === "mine_ash" ? "ash_guardian" : "frost_wight", 1);
+    if (near.kind === "boss") {
+      await startCombat(dungeonId === "mine_ash" ? "ash_guardian" : "frost_wight", 1);
+    }
+    return;
   }
+
+  notify(
+    getLocale() === "de" ? `Unbekannt: ${near.kind}` : `Unhandled: ${near.kind}`,
+    "warn"
+  );
 }
 
 async function useFeature(featureId: string, choice?: string): Promise<void> {
   if (!character || !dungeonId || !roomId) return;
-  const data = await api("/api/dungeon/feature", {
-    method: "POST",
-    body: JSON.stringify({
-      characterId: character.id,
-      dungeonId,
-      roomId,
-      featureId,
-      choice,
-    }),
-  });
-  character = data.character;
-  document.getElementById("center-panel")!.classList.add("hidden");
-  notify(t("notify.quest_update"), "quest");
-  updateHud();
+  try {
+    const data = await api("/api/dungeon/feature", {
+      method: "POST",
+      body: JSON.stringify({
+        characterId: character.id,
+        dungeonId,
+        roomId,
+        featureId,
+        choice,
+      }),
+    });
+    character = data.character;
+    document.getElementById("center-panel")!.classList.add("hidden");
+    playSfx("buy");
+    const notes = (data.notifications as string[] | undefined) ?? [];
+    if (notes.includes("notify.item_gained")) {
+      notify(t("notify.item_gained", { item: "loot" }) || "You found something!", "loot");
+    } else if (notes.includes("notify.puzzle_ok")) {
+      notify(
+        getLocale() === "de" ? "Rätsel gelöst!" : "Puzzle solved!",
+        "quest"
+      );
+    } else {
+      notify(t("notify.quest_update") || "Progress updated.", "quest");
+    }
+    // Show last inventory items briefly
+    const last = character.inventory[character.inventory.length - 1];
+    if (last && notes.includes("notify.item_gained")) {
+      notify(`+ ${last.qty}× ${t(`item.${last.itemId}`) || last.itemId}`, "loot");
+    }
+    updateHud();
+    if (OFFLINE) {
+      try {
+        saveOfflineCharacter(character);
+      } catch {
+        /* ok */
+      }
+    }
+  } catch (e: any) {
+    notify(String(e.message || e), "warn");
+  }
 }
 
 // Chat
@@ -1988,10 +2257,31 @@ function loop(t: number): void {
     const btnInteract = document.getElementById("btn-interact");
     if (near) {
       prompt.classList.remove("hidden");
-      const label = near.kind === "npc" ? t("ui.talk") : near.kind;
-      prompt.textContent = player.touchMode ? label : `[E] ${label}`;
+      const labelMap: Record<string, string> = {
+        npc: t("ui.talk"),
+        building: t("ui.enter_dungeon") !== "ui.enter_dungeon" ? "Enter" : "Enter",
+        dungeon: t("ui.enter_dungeon") || "Enter",
+        travel: t("ui.travel"),
+        quest_board: t("place.quest_board") || "Board",
+        encounter: t("ui.attack") || "Fight",
+        exit: t("ui.leave") || "Leave",
+        door: t("ui.enter_dungeon") || "Door",
+        chest: "Loot",
+        boss: "Boss",
+        greed: "Treasure",
+        puzzle: "Puzzle",
+      };
+      const label = labelMap[near.kind] || near.kind;
+      // Prefer localized enter for buildings
+      const short =
+        near.kind === "building"
+          ? getLocale() === "de"
+            ? "Eintreten"
+            : "Enter"
+          : label;
+      prompt.textContent = player.touchMode ? short : `[E] ${short}`;
       btnInteract?.classList.add("show-interact");
-      if (btnInteract) btnInteract.textContent = near.kind === "npc" ? t("ui.talk") : "Use";
+      if (btnInteract) btnInteract.textContent = short;
     } else {
       prompt.classList.add("hidden");
       btnInteract?.classList.remove("show-interact");

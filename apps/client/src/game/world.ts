@@ -230,15 +230,40 @@ export class WorldScene {
     // Paths from origin toward each building
     this.addTownPaths(town);
 
-    // Buildings
+    // Buildings — door zones for enter/talk/dungeon/travel
     for (const b of town.buildings) {
       this.addBuilding(b, town.id);
       if (b.interact) {
+        const isNpc = b.interact.startsWith("npc");
+        const isDungeon = b.interact.startsWith("dungeon");
         this.interactables.push({
-          id: b.interact,
-          position: new THREE.Vector3(b.x, 1, b.z + b.d / 2 + 0.5),
-          radius: 2.5,
-          kind: b.interact.startsWith("npc") ? "npc" : b.interact,
+          id: isNpc || isDungeon || b.interact === "travel" || b.interact === "quest_board"
+            ? b.interact
+            : b.id,
+          // Slightly in front of the building face so you don't clip into geometry
+          position: new THREE.Vector3(b.x, 1, b.z + b.d / 2 + 1.1),
+          radius: 3.2,
+          kind: isNpc
+            ? "npc"
+            : isDungeon
+              ? "dungeon"
+              : b.interact === "travel"
+                ? "travel"
+                : b.interact === "quest_board"
+                  ? "quest_board"
+                  : "building",
+        });
+        // Store dungeon target on id for dungeon kind
+        if (isDungeon) {
+          // id remains dungeon_cult / dungeon_crypt
+        }
+      } else {
+        // Still enterable generic building (look around / rest flavor)
+        this.interactables.push({
+          id: b.id,
+          position: new THREE.Vector3(b.x, 1, b.z + b.d / 2 + 1.1),
+          radius: 2.8,
+          kind: "building",
         });
       }
     }
@@ -252,7 +277,7 @@ export class WorldScene {
       this.interactables.push({
         id: npc.id,
         position: new THREE.Vector3(npc.x, 1, npc.z),
-        radius: 2.2,
+        radius: 2.8,
         kind: "npc",
       });
       // Quest pin above key story NPCs / dungeon doors
@@ -401,7 +426,7 @@ export class WorldScene {
       this.interactables.push({
         id: `encounter_${enc.type}`,
         position: new THREE.Vector3(enc.x, 1, enc.z),
-        radius: 3,
+        radius: 3.5,
         kind: "encounter",
       });
     }
@@ -412,7 +437,7 @@ export class WorldScene {
       this.interactables.push({
         id: f.id,
         position: new THREE.Vector3(f.x, 1, f.z),
-        radius: 2.2,
+        radius: 2.8,
         kind: f.kind,
       });
     }

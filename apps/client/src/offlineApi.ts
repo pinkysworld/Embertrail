@@ -210,11 +210,23 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     return { character: after, leg, notifications };
   }
 
-  // Use consumable outside combat (heal/focus)
+  // Use consumable outside combat (heal/focus) or convert coin piles
   if (path === "/api/item/use" && method === "POST") {
     const sheet = loadChar();
     if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
     const itemId = String(body.itemId);
+    const def = ITEMS[itemId];
+    if (itemId === "copper_coins") {
+      const stack = sheet.inventory.find((i) => i.itemId === "copper_coins");
+      if (!stack || stack.qty < 1) throw new Error("no_item");
+      const take = stack.qty;
+      const inv = removeItem(sheet.inventory, "copper_coins", take);
+      if (!inv) throw new Error("no_item");
+      const next: CharacterSheet = { ...sheet, inventory: inv };
+      applyWealthCopper(next, wealthCopper(next) + take);
+      saveChar(next);
+      return { character: next, notification: "notify.coins_added", amount: take };
+    }
     const inv = removeItem(sheet.inventory, itemId, 1);
     if (!inv) throw new Error("no_item");
     const next: CharacterSheet = {
@@ -223,8 +235,8 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
       questFlags: { ...sheet.questFlags },
     };
     let note = "notify.item_used";
-    if (itemId === "potion_heal") {
-      next.life = Math.min(next.lifeMax, next.life + 12);
+    if (itemId === "potion_heal" || def?.heal) {
+      next.life = Math.min(next.lifeMax, next.life + (def?.heal ?? 12));
       note = "notify.healed";
     } else if (itemId === "potion_focus") {
       next.focus = Math.min(next.focusMax, next.focus + 8);
@@ -232,13 +244,54 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
     } else if (itemId === "ration" || itemId === "rations_pack") {
       const heal = itemId === "rations_pack" ? 8 : 5;
       next.life = Math.min(next.lifeMax, next.life + heal);
-      if (itemId === "ration") next.rations = Math.max(0, next.rations - 0); // already removed item
+      if (itemId === "rations_pack") next.rations += def?.rations ?? 7;
       note = "notify.healed";
     } else {
       throw new Error("not_usable");
     }
     saveChar(next);
     return { character: next, notification: note };
+  }
+
+  // Equip / unequip gear
+  if (path === "/api/item/equip" && method === "POST") {
+    const sheet = loadChar();
+    if (!sheet || sheet.id !== body.characterId) throw new Error("not_found");
+    const itemId = String(body.itemId);
+    const def = ITEMS[itemId];
+    if (!def) throw new Error("no_item");
+    const has = sheet.inventory.some((i) => i.itemId === itemId && i.qty >= 1);
+    if (!has && body.unequip !== true) throw new Error("no_item");
+    const next: CharacterSheet = {
+      ...sheet,
+      inventory: cloneInventory(sheet.inventory),
+      equipped: { ...sheet.equipped },
+    };
+    const slotOf = (id: string): keyof CharacterSheet["equipped"] | null => {
+      const d = ITEMS[id];
+      if (!d) return null;
+      if (d.kind === "weapon" || id === "foxbrand_axe") return "mainHand";
+      if (d.kind === "shield") return "offHand";
+      if (d.kind === "armor") {
+        if (id === "boots") return "boots";
+        return "armor";
+      }
+      if (id === "boots") return "boots";
+      return null;
+    };
+    if (body.unequip === true || body.slot === "clear") {
+      for (const s of ["mainHand", "offHand", "armor", "boots"] as const) {
+        if (next.equipped[s] === itemId) next.equipped[s] = undefined;
+      }
+      saveChar(next);
+      return { character: next, notification: "notify.unequipped" };
+    }
+    const slot = (body.slot as keyof CharacterSheet["equipped"]) || slotOf(itemId);
+    if (!slot) throw new Error("not_equippable");
+    // Swap: previous gear stays in inventory (we never remove equipped from bag in this simplified model)
+    next.equipped[slot] = itemId;
+    saveChar(next);
+    return { character: next, notification: "notify.equipped", slot, itemId };
   }
 
   if (path === "/api/combat/start" && method === "POST") {
@@ -409,7 +462,12 @@ export async function offlineApi(path: string, opts: RequestInit = {}): Promise<
       }
       notifications.push("notify.item_gained");
     }
-    if (feature.kind === "boss" || feature.kind === "chest") {
+    if (feature.kind === "boss" || feature.kind === "chest" || feature.kind === "puzzle") {
+      if (feature.kind === "puzzle") {
+        // Simple puzzle: always succeeds for offline playability
+        notifications.push("notify.puzzle_ok");
+        next.questFlags[`${body.dungeonId}:puzzle:${feature.id}`] = true;
+      }
       const loot = String(feature.data?.loot ?? "");
       if (loot && !next.inventory.some((i) => i.itemId === loot)) {
         next.inventory.push({ itemId: loot, qty: 1 });
